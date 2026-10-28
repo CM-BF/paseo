@@ -1,5 +1,16 @@
 # 更新日志
 
+尚未发布。以下变更已合入 `main`，但不包含在 0.14.0-beta.2 中；下一个版本的条目会包含它们。
+
+新增：
+
+- 在 setup 和 Agent 启动前，使用内置的 `worktree-include` 插件将 `.worktreeinclude` 选中的被 gitignore 忽略的文件复制到新工作树 ([#8100](https://github.com/getpaseo/paseo/pull/8100))
+- 插件可通过 `worktree.create.before` 选择工作树路径和创建选项，自定义位置的工作树支持列出、归档、删除和恢复；附带同级目录放置示例 ([#8117](https://github.com/getpaseo/paseo/pull/8117))
+
+改进：
+
+- 新增采用 `subject.operation.position` 命名的 `server.addHook` 和在 setup 及 Agent 之前等待的 `worktree.create.after` 钩子，弃用原有的插件钩子注册方法并保留原有行为 ([#8081](https://github.com/getpaseo/paseo/pull/8081))
+
 ## 0.14.0-beta.2 - 2026-10-28
 
 插件现在可以为单个 Agent 添加工具，并在会话打开时配置其 MCP 服务器。
@@ -20,8 +31,6 @@
 - 新增按项目记忆编辑器的功能，macOS 支持 Xcode ([#7898](https://github.com/getpaseo/paseo/pull/7898) by [@kinoroy](https://github.com/kinoroy))
 
 ### 改进
-
-- 新增采用 `subject.operation.position` 命名的 `server.addHook` 和在 setup 及 Agent 之前等待的 `worktree.create.after` 钩子，弃用原有的插件钩子注册方法并保留原有行为 ([#8081](https://github.com/getpaseo/paseo/pull/8081))
 
 - 符合条件的 Agent 运行时空闲一小时后释放，下次发送提示词时恢复已保存的会话 ([#7782](https://github.com/getpaseo/paseo/pull/7782))
 - 在子 Agent 窗格中新增返回父 Agent 的链接 ([#7784](https://github.com/getpaseo/paseo/pull/7784))
