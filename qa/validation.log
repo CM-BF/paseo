@@ -1,0 +1,867 @@
++ npm run build --workspace=@getpaseo/server
+
+> @getpaseo/server@0.14.0-beta.1 build
+> npm run build:lib && npm run build:scripts
+
+
+> @getpaseo/server@0.14.0-beta.1 build:lib
+> tsc -p tsconfig.server.json --incremental false && node scripts/build-opencode-bridge-plugin.mjs && node scripts/build-terminal-worker.mjs && node -e "const fs=require('node:fs'); fs.mkdirSync('dist/server/server/speech/providers/local/sherpa/assets',{recursive:true}); fs.copyFileSync('src/server/speech/providers/local/sherpa/assets/silero_vad.onnx','dist/server/server/speech/providers/local/sherpa/assets/silero_vad.onnx'); fs.cpSync('src/terminal/shell-integration','dist/server/terminal/shell-integration',{recursive:true}); fs.cpSync('src/terminal/shell-integration','dist/src/terminal/shell-integration',{recursive:true}); fs.copyFileSync('src/terminal/terminal-ts-loader.mjs','dist/server/terminal/terminal-ts-loader.mjs'); fs.rmSync('dist/server/skills',{recursive:true,force:true}); fs.cpSync('../../skills','dist/server/skills',{recursive:true}); fs.rmSync('dist/server/builtin-plugins',{recursive:true,force:true}); fs.cpSync('../../plugins','dist/server/builtin-plugins',{recursive:true,filter:(source)=>!source.split(require('node:path').sep).some((segment)=>segment==='node_modules'||segment==='test')&&!/\.(test|spec)\.[cm]?[jt]sx?$/.test(source)&&!source.endsWith('.tsbuildinfo')});"
+
+
+> @getpaseo/server@0.14.0-beta.1 build:scripts
+> tsc -p tsconfig.scripts.json --incremental false && node -e "const fs=require('node:fs'); fs.mkdirSync('dist/scripts',{recursive:true}); fs.copyFileSync('scripts/mcp-stdio-socket-bridge-cli.mjs','dist/scripts/mcp-stdio-socket-bridge-cli.mjs');"
+
++ npm run build --workspace=@getpaseo/cli
+
+> @getpaseo/cli@0.14.0-beta.1 build
+> tsc -p tsconfig.json --incremental false
+
++ cd packages/server
++ npx vitest run src/server/plugins/runtime.posix.test.ts --bail=1 -t 'plugin workspace activity lifecycle|loads separate entries|keeps client and server modules'
+
+ RUN  v4.1.6 <checkout>/packages/server
+
+stdout | src/server/plugins/runtime.posix.test.ts
+[dotenv@17.3.1] injecting env (0) from .env.test -- tip: ⚙️  enable debug logging with { debug: true }
+[dotenv@17.3.1] injecting env (0) from ../.env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+
+ ✓ src/server/plugins/runtime.posix.test.ts (63 tests | 58 skipped) 1455ms
+     ✓ publishes ready activities and does not let an old instance affect a replacement  327ms
+     ✓ initialization failure cannot leak registrations  332ms
+     ✓ loads separate entries, exposes the client bundle, and invokes the server RPC  388ms
+     ✓ keeps client and server modules in their target runtime  401ms
+
+ Test Files  1 passed (1)
+      Tests  5 passed | 58 skipped (63)
+   Start at  10:48:56
+   Duration  4.23s (transform 2.20s, setup 20ms, import 2.67s, tests 1.45s, environment 0ms)
+
++ npx vitest run src/server/plugins/plugin-paseo-api.e2e.test.ts --bail=1 -t 'plugin workspace activities synchronize'
+
+ RUN  v4.1.6 <checkout>/packages/server
+
+stdout | src/server/plugins/plugin-paseo-api.e2e.test.ts
+[dotenv@17.3.1] injecting env (0) from .env.test -- tip: ⚡️ secrets for agents: https://dotenvx.com/as2
+[dotenv@17.3.1] injecting env (0) from ../.env -- tip: ⚙️  enable debug logging with { debug: true }
+
+ ✓ src/server/plugins/plugin-paseo-api.e2e.test.ts (8 tests | 7 skipped) 2108ms
+   ✓ plugin workspace activities synchronize clients and clear on removal, crash, and archive  2108ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 7 skipped (8)
+   Start at  10:49:00
+   Duration  7.00s (transform 3.73s, setup 17ms, import 4.81s, tests 2.11s, environment 0ms)
+
++ npx vitest run src/server/workspace-directory.test.ts --bail=1
+
+ RUN  v4.1.6 <checkout>/packages/server
+
+stdout | src/server/workspace-directory.test.ts
+[dotenv@17.3.1] injecting env (0) from .env.test -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+[dotenv@17.3.1] injecting env (0) from ../.env -- tip: ⚙️  suppress all logs with { quiet: true }
+
+ ✓ src/server/workspace-directory.test.ts (33 tests) 20ms
+
+ Test Files  1 passed (1)
+      Tests  33 passed (33)
+   Start at  10:49:08
+   Duration  389ms (transform 170ms, setup 20ms, import 279ms, tests 20ms, environment 0ms)
+
++ cd ../..
++ E2E_RECORD_VIDEO=1
++ npm run test:e2e --workspace=@getpaseo/app -- e2e/browser/plugin-floating-widget.spec.ts e2e/browser/plugin-provider-icons.spec.ts e2e/browser/plugin-workspace-activities.spec.ts e2e/browser/plugin-theme.spec.ts -g 'floats across|drags content|client icon overrides|plugin activities|workspace status renderer|applies a contributed' --output=/tmp/paseo-plugin-api-pr-e2e
+
+> @getpaseo/app@0.14.0-beta.1 test:e2e
+> playwright test --project=browser e2e/browser/plugin-floating-widget.spec.ts e2e/browser/plugin-provider-icons.spec.ts e2e/browser/plugin-workspace-activities.spec.ts e2e/browser/plugin-theme.spec.ts -g floats across|drags content|client icon overrides|plugin activities|workspace status renderer|applies a contributed --output=/tmp/paseo-plugin-api-pr-e2e
+
+[metro] Skipping web setup: EXPO_NO_WEB_SETUP is enabled.
+[metro] Using src/app as the root directory for Expo Router.
+[metro] Unable to run simctl:
+[metro] Error: xcrun simctl help exited with non-zero code: 72
+[metro] Waiting on http://localhost:54715
+[metro] Logs for your project will appear below.
+[metro] Web Bundled 11264ms packages/app/index.ts (5747 modules)
+[e2e] Metro warmed on port 54715
+
+Running 6 tests using 1 worker
+
+[e2e] Worker 0 daemon started on port 54738, home: <tmp>/paseo-e2e-worker-0-JhHWMA
+[metro] Web Bundled 209ms packages/app/index.ts (1 module)
+[metro] Web Bundled 28ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
+[metro] Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[metro] Web  LOG  Running application "main" with appParams:
+[metro]  {"hydrate": undefined, "rootTag": "#root"} 
+[metro] Development-level warnings: ON.
+[metro] Performance optimizations: OFF.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/runtime/directory-sync/index.ts -> src/runtime/directory-sync/agent-replica.ts -> src/hooks/use-archive-agent.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/actions.ts -> src/plugins/workspace-panels/locations.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/navigation-active-workspace-store/index.ts -> src/workspace-tabs/navigation.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/navigation-active-workspace-store/index.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/themes/index.ts -> src/plugins/registry.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/components/sidebar-workspace-list.tsx -> src/components/sidebar/sidebar-status-list.tsx -> src/components/sidebar/sidebar-workspace-row-content.tsx -> src/components/workspace-hover-card.tsx -> src/components/sidebar-workspace-list.tsx
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
+  ✓  1 [browser] › e2e/browser/plugin-floating-widget.spec.ts:50:5 › floats across routes, restores after hiding, and stays within a compact viewport (4.3s)
+[metro] Web Bundled 193ms packages/app/index.ts (1 module)
+[metro] Web Bundled 4ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
+[metro] Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[metro] Web  LOG  Running application "main" with appParams:
+[metro]  {"hydrate": undefined, "rootTag": "#root"} 
+[metro] Development-level warnings: ON.
+[metro] Performance optimizations: OFF.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/runtime/directory-sync/index.ts -> src/runtime/directory-sync/agent-replica.ts -> src/hooks/use-archive-agent.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/actions.ts -> src/plugins/workspace-panels/locations.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/navigation-active-workspace-store/index.ts -> src/workspace-tabs/navigation.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/navigation-active-workspace-store/index.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/themes/index.ts -> src/plugins/registry.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/components/sidebar-workspace-list.tsx -> src/components/sidebar/sidebar-status-list.tsx -> src/components/sidebar/sidebar-workspace-row-content.tsx -> src/components/workspace-hover-card.tsx -> src/components/sidebar-workspace-list.tsx
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
+  ✓  2 [browser] › e2e/browser/plugin-floating-widget.spec.ts:165:5 › drags content without chrome while preserving activation, long press, and Command Center recovery (4.5s)
+[metro] Web Bundled 187ms packages/app/index.ts (1 module)
+[metro] Web Bundled 4ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
+[metro] Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[metro] Web  LOG  Running application "main" with appParams:
+[metro]  {"hydrate": undefined, "rootTag": "#root"} 
+[metro] Development-level warnings: ON.
+[metro] Performance optimizations: OFF.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/runtime/directory-sync/index.ts -> src/runtime/directory-sync/agent-replica.ts -> src/hooks/use-archive-agent.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/actions.ts -> src/plugins/workspace-panels/locations.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/navigation-active-workspace-store/index.ts -> src/workspace-tabs/navigation.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/navigation-active-workspace-store/index.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/themes/index.ts -> src/plugins/registry.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/components/sidebar-workspace-list.tsx -> src/components/sidebar/sidebar-status-list.tsx -> src/components/sidebar/sidebar-workspace-row-content.tsx -> src/components/workspace-hover-card.tsx -> src/components/sidebar-workspace-list.tsx
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
+[metro] Web  WARN  Animated: `useNativeDriver` is not supported because the native animated module is missing. Falling back to JS-based animation. To resolve this, add `RCTAnimation` module to this app, or remove `useNativeDriver`. Make sure to run `bundle exec pod install` first. Read more about autolinking: https://github.com/react-native-community/cli/blob/master/docs/autolinking.md
+[metro] Web  WARN  [Icons] Unable to render SVG [Error: Expected > (1:0). If this is valid SVG, it's probably a bug. Please raise an issue
+[metro] <svg viewBox="0 0 24 24"><path
+[metro]                               ^]
+[metro] Web  WARN  [Icons] Unable to render SVG [Error: Expected > (1:0). If this is valid SVG, it's probably a bug. Please raise an issue
+[metro] <svg viewBox="0 0 24 24"><path
+[metro]                               ^]
+[metro] Web  WARN  [Icons] Unable to render SVG [Error: Expected > (1:0). If this is valid SVG, it's probably a bug. Please raise an issue
+[metro] <svg viewBox="0 0 24 24"><path
+[metro]                               ^]
+  ✓  3 [browser] › e2e/browser/plugin-provider-icons.spec.ts:19:5 › client icon overrides replace built-in and custom providers and recover on removal (5.5s)
+[metro] Web Bundled 187ms packages/app/index.ts (1 module)
+[metro] Web Bundled 4ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
+[metro] Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[metro] Web  LOG  Running application "main" with appParams:
+[metro]  {"hydrate": undefined, "rootTag": "#root"} 
+[metro] Development-level warnings: ON.
+[metro] Performance optimizations: OFF.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/runtime/directory-sync/index.ts -> src/runtime/directory-sync/agent-replica.ts -> src/hooks/use-archive-agent.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/actions.ts -> src/plugins/workspace-panels/locations.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/navigation-active-workspace-store/index.ts -> src/workspace-tabs/navigation.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/navigation-active-workspace-store/index.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/themes/index.ts -> src/plugins/registry.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/components/sidebar-workspace-list.tsx -> src/components/sidebar/sidebar-status-list.tsx -> src/components/sidebar/sidebar-workspace-row-content.tsx -> src/components/workspace-hover-card.tsx -> src/components/sidebar-workspace-list.tsx
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
+[metro] Web Bundled 178ms packages/app/index.ts (1 module)
+[metro] Web Bundled 4ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
+[metro] Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[metro] Web  LOG  Running application "main" with appParams:
+[metro]  {"hydrate": undefined, "rootTag": "#root"} 
+[metro] Development-level warnings: ON.
+[metro] Performance optimizations: OFF.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/runtime/directory-sync/index.ts -> src/runtime/directory-sync/agent-replica.ts -> src/hooks/use-archive-agent.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/actions.ts -> src/plugins/workspace-panels/locations.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/navigation-active-workspace-store/index.ts -> src/workspace-tabs/navigation.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/navigation-active-workspace-store/index.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/themes/index.ts -> src/plugins/registry.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/components/sidebar-workspace-list.tsx -> src/components/sidebar/sidebar-status-list.tsx -> src/components/sidebar/sidebar-workspace-row-content.tsx -> src/components/workspace-hover-card.tsx -> src/components/sidebar-workspace-list.tsx
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
+  ✓  4 [browser] › e2e/browser/plugin-theme.spec.ts:59:5 › applies a contributed theme and falls back when its plugin is gone (5.2s)
+[metro] Web Bundled 174ms packages/app/index.ts (1 module)
+[metro] Web Bundled 4ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
+[metro] Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[metro] Web  LOG  Running application "main" with appParams:
+[metro]  {"hydrate": undefined, "rootTag": "#root"} 
+[metro] Development-level warnings: ON.
+[metro] Performance optimizations: OFF.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/runtime/directory-sync/index.ts -> src/runtime/directory-sync/agent-replica.ts -> src/hooks/use-archive-agent.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/actions.ts -> src/plugins/workspace-panels/locations.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/navigation-active-workspace-store/index.ts -> src/workspace-tabs/navigation.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/navigation-active-workspace-store/index.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/themes/index.ts -> src/plugins/registry.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/components/sidebar-workspace-list.tsx -> src/components/sidebar/sidebar-status-list.tsx -> src/components/sidebar/sidebar-workspace-row-content.tsx -> src/components/workspace-hover-card.tsx -> src/components/sidebar-workspace-list.tsx
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
+[metro] Web  WARN  Animated: `useNativeDriver` is not supported because the native animated module is missing. Falling back to JS-based animation. To resolve this, add `RCTAnimation` module to this app, or remove `useNativeDriver`. Make sure to run `bundle exec pod install` first. Read more about autolinking: https://github.com/react-native-community/cli/blob/master/docs/autolinking.md
+  ✓  5 [browser] › e2e/browser/plugin-workspace-activities.spec.ts:43:5 › plugin activities keep idle workspaces running and yield to native needs-input (4.1s)
+[metro] Web Bundled 182ms packages/app/index.ts (1 module)
+[metro] Web Bundled 3ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
+[metro] Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[metro] Web  LOG  Running application "main" with appParams:
+[metro]  {"hydrate": undefined, "rootTag": "#root"} 
+[metro] Development-level warnings: ON.
+[metro] Performance optimizations: OFF.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/runtime/directory-sync/index.ts -> src/runtime/directory-sync/agent-replica.ts -> src/hooks/use-archive-agent.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/actions.ts -> src/plugins/workspace-panels/locations.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/navigation-active-workspace-store/index.ts -> src/workspace-tabs/navigation.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/navigation-active-workspace-store/index.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/themes/index.ts -> src/plugins/registry.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/components/sidebar-workspace-list.tsx -> src/components/sidebar/sidebar-status-list.tsx -> src/components/sidebar/sidebar-workspace-row-content.tsx -> src/components/workspace-hover-card.tsx -> src/components/sidebar-workspace-list.tsx
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
+[metro] Web  WARN  Animated: `useNativeDriver` is not supported because the native animated module is missing. Falling back to JS-based animation. To resolve this, add `RCTAnimation` module to this app, or remove `useNativeDriver`. Make sure to run `bundle exec pod install` first. Read more about autolinking: https://github.com/react-native-community/cli/blob/master/docs/autolinking.md
+[metro] Web  ERROR  
+[metro] Code: evaluate.ts
+[metro]   619 |   };
+[metro]   620 |   const evaluate: (source: string) => unknown = globalThis.eval;
+[metro] > 621 |   const factory = evaluate(bundle);
+[metro]       |                   ^
+[metro]   622 |   if (typeof factory !== "function")
+[metro]   623 |     throw new Error(`Plugin ${id} client bundle is not executable`);
+[metro]   624 |   const exports = factory(runtimeRequire);
+[metro] Call Stack
+[metro]   runPluginClientBundle (packages/app/src/plugins/evaluate.ts:621:19)
+[metro]   RendererContent (packages/app/src/workspace-status/renderer.tsx:32:7)
+[metro]   WorkspaceStatusRenderer (packages/app/src/workspace-status/renderer.tsx:99:9)
+[metro]   SidebarWorkspaceRowContent (packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx:147:9)
+[metro]   SidebarWorkspaceRowFrame.props.children (packages/app/src/components/sidebar-workspace-list.tsx:1170:15)
+[metro]   SidebarWorkspaceRowFrame (packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx:82:8)
+[metro]   WorkspaceRowInner (packages/app/src/components/sidebar-workspace-list.tsx:1119:5)
+[metro]   WorkspaceRowWithMenu (packages/app/src/components/sidebar-workspace-list.tsx:1332:7)
+[metro]   WorkspaceRow (packages/app/src/components/sidebar-workspace-list.tsx:1524:5)
+[metro]   WorkspaceRowItem (packages/app/src/components/sidebar-workspace-list.tsx:1419:5)
+[metro]   renderWorkspaceRow (packages/app/src/components/sidebar-workspace-list.tsx:1645:9)
+[metro]   visibleWorkspaces.map$argument_0 (packages/app/src/components/sidebar-workspace-list.tsx:1788:48)
+[metro]   ProjectBlock (packages/app/src/components/sidebar-workspace-list.tsx:1788:33)
+[metro]   renderProjectBlock (packages/app/src/components/sidebar-workspace-list.tsx:2341:9)
+[metro]   renderProject (packages/app/src/components/sidebar-workspace-list.tsx:2396:7)
+[metro]   SortableItemInner (packages/app/src/components/draggable-list.web.tsx:180:8)
+[metro]   items.map$argument_0 (packages/app/src/components/draggable-list.web.tsx:294:19)
+[metro]   DraggableList (packages/app/src/components/draggable-list.web.tsx:291:21)
+[metro]   ProjectModeList (packages/app/src/components/sidebar-workspace-list.tsx:2447:5)
+[metro]   SidebarWorkspaceList (packages/app/src/components/sidebar-workspace-list.tsx:2011:5)
+[metro]   DesktopSidebar (packages/app/src/components/left-sidebar.tsx:767:11)
+[metro]   LeftSidebar (packages/app/src/components/left-sidebar.tsx:267:9)
+[metro]   SidebarChrome (packages/app/src/app/_layout.tsx:552:8)
+[metro]   AppContainer (packages/app/src/app/_layout.tsx:432:5)
+[metro]   AppWithSidebar (packages/app/src/app/_layout.tsx:780:10)
+[metro]   AppShell (packages/app/src/app/_layout.tsx:841:9)
+[metro]   RootAppTree (packages/app/src/app/_layout.tsx:897:15)
+[metro]   RootLayout (packages/app/src/app/_layout.tsx:917:10)
+[metro]   RootRouter (packages/app/src/root-app.tsx:35:15)
+[metro]   RootApp (packages/app/src/root-app.tsx:19:7)
+[metro] Web  WARN  [Plugins] Surface render failed [Error: fixture renderer failed] 
+[metro] Code: evaluate.ts
+[metro]   619 |   };
+[metro]   620 |   const evaluate: (source: string) => unknown = globalThis.eval;
+[metro] > 621 |   const factory = evaluate(bundle);
+[metro]       |                   ^
+[metro]   622 |   if (typeof factory !== "function")
+[metro]   623 |     throw new Error(`Plugin ${id} client bundle is not executable`);
+[metro]   624 |   const exports = factory(runtimeRequire);
+[metro] Call Stack
+[metro]   runPluginClientBundle (packages/app/src/plugins/evaluate.ts:621:19)
+[metro]   PluginTranslationProvider (packages/plugin/dist/client/translations.js:138:45)
+[metro]   PluginRpcProvider (packages/plugin/dist/client/rpc-context.js:8:8)
+[metro]   PaseoApiProvider (packages/plugin/dist/client/paseo-context.js:7:36)
+[metro]   PluginInstallationProvider (packages/app/src/plugins/installation-provider.tsx:11:8)
+[metro]   RendererContent (packages/app/src/workspace-status/renderer.tsx:25)
+[metro]   SurfaceErrorBoundary (packages/app/src/plugins/surface-error-boundary.tsx:17:8)
+[metro]   WorkspaceStatusRenderer (packages/app/src/workspace-status/renderer.tsx:44:8)
+[metro]   SidebarWorkspaceRowContent (packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx:92:48)
+[metro]   PressHighlight (packages/app/src/components/ui/press-highlight.tsx:6:69)
+[metro]   ContextMenuTrigger (packages/app/src/components/ui/context-menu.tsx:98:8)
+[metro]   MenuRoot (packages/app/src/components/ui/menu/menu-root.tsx:33:8)
+[metro]   ContextMenu (packages/app/src/components/ui/context-menu.tsx:49:8)
+[metro]   SidebarWorkspaceContextMenu (packages/app/src/components/sidebar/sidebar-workspace-menu.tsx:326:8)
+[metro]   HoverCardTrigger (packages/app/src/components/ui/hover-card.tsx:264:3)
+[metro]   OverlayLayerProvider (packages/app/src/lib/overlay-root.ts:78:40)
+[metro]   WebHoverCard (packages/app/src/components/ui/hover-card.tsx:76)
+[metro]   HoverCard (packages/app/src/components/ui/hover-card.tsx:64:8)
+[metro]   WorkspaceHoverCard (packages/app/src/components/workspace-hover-card.tsx:53:8)
+[metro]   SidebarWorkspaceRowFrame (packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx:46:8)
+[metro]   WorkspaceRowInner (packages/app/src/components/sidebar-workspace-list.tsx:1055:3)
+[metro]   WorkspaceRowWithMenu (packages/app/src/components/sidebar-workspace-list.tsx:1214)
+[metro]   WorkspaceRow (packages/app/src/components/sidebar-workspace-list.tsx:1484)
+[metro]   WorkspaceRowItem (packages/app/src/components/sidebar-workspace-list.tsx:1392)
+[metro]   ProjectBlock (packages/app/src/components/sidebar-workspace-list.tsx:1545)
+[metro]   SortableItemInner (packages/app/src/components/draggable-list.web.tsx:102:3)
+[metro]   DraggableList (packages/app/src/components/draggable-list.web.tsx:187:8)
+[metro]   ProjectModeList (packages/app/src/components/sidebar-workspace-list.tsx:2125)
+[metro]   SidebarWorkspaceList (packages/app/src/components/sidebar-workspace-list.tsx:1933:8)
+[metro]   DesktopSidebar (packages/app/src/components/left-sidebar.tsx:622:3)
+[metro]   RetainedPanelActivity (packages/app/src/components/retained-panel.tsx:22:8)
+[metro]   LeftSidebar (packages/app/src/components/left-sidebar.tsx:127:33)
+[metro]   SidebarModelProvider (packages/app/src/components/sidebar/sidebar-model.tsx:51:8)
+[metro]   SidebarChrome (packages/app/src/app/_layout.tsx:537)
+[metro]   AppearanceStyleBoundaryBase (packages/app/src/components/appearance-style-boundary.tsx:19)
+[metro]   AppearanceStyleBoundary (packages/app/src/components/appearance-style-boundary.tsx:73:8)
+[metro]   WindowChromeRegion (packages/app/src/utils/desktop-window.tsx:250:8)
+[metro]   SheetHostScope (packages/app/src/components/ui/isolated-bottom-sheet-modal/host-scope.tsx:32:8)
+[metro]   MobileGestureWrapper (packages/app/src/app/_layout.tsx:558)
+[metro]   CommandCenterProvider (packages/app/src/command-center/provider.tsx:14:41)
+[metro]   ComposerEditingSessionsProvider (packages/app/src/composer/editing-session/index.tsx:137:8)
+[metro]   AppContainerLifetime (packages/app/src/app/_layout.tsx:519)
+[metro]   AppContainer (packages/app/src/app/_layout.tsx:346)
+[metro]   AppWithSidebar (packages/app/src/app/_layout.tsx:764)
+[metro]   HorizontalScrollProvider (packages/app/src/contexts/horizontal-scroll-context.tsx:20:44)
+[metro]   MobilePanelsProvider (packages/app/src/mobile-panels/provider.tsx:71:40)
+[metro]   AppShell (packages/app/src/app/_layout.tsx:832)
+[metro]   VoiceProvider (packages/app/src/contexts/voice-context.tsx:115:33)
+[metro]   AppearanceProvider (packages/app/src/appearance/provider.tsx:59:8)
+[metro]   ProvidersWrapper (packages/app/src/app/_layout.tsx:581)
+[metro]   SidebarCalloutProvider (packages/app/src/contexts/sidebar-callout-context.tsx:51:42)
+[metro]   HostRuntimeBootstrapProvider (packages/app/src/app/_layout.tsx:257)
+[metro]   RuntimeProviders (packages/app/src/app/_layout.tsx:855)
+[metro]   ToastApiProvider (packages/app/src/contexts/toast-api-context.tsx:14:8)
+[metro]   ToastProvider (packages/app/src/contexts/toast-context.tsx:7:8)
+[metro]   KeyboardShiftProvider (packages/app/src/keyboard/shift/internal/provider.ts:27:41)
+[metro]   WindowChromeProvider (packages/app/src/utils/desktop-window.tsx:131:40)
+[metro]   KeyboardActionDispatcherProvider (packages/app/src/keyboard/keyboard-action-dispatcher-context.tsx:9:52)
+[metro]   RootProviders (packages/app/src/app/_layout.tsx:872)
+[metro]   RootAppTree (packages/app/src/app/_layout.tsx:890)
+[metro]   RootLayout (packages/app/src/app/_layout.tsx:906:16)
+[metro]   RootErrorBoundary (packages/app/src/components/root-error-boundary.tsx:20:8)
+[metro]   I18nProvider (packages/app/src/i18n/provider.tsx:22:8)
+[metro]   RootRouter (packages/app/src/root-app.tsx:24:8)
+[metro]   RenderProfile (packages/app/src/utils/render-profiler.tsx:75:8)
+[metro]   RootApp (packages/app/src/root-app.tsx:16:8)
+[metro] Web  ERROR  
+[metro] Code: evaluate.ts
+[metro]   619 |   };
+[metro]   620 |   const evaluate: (source: string) => unknown = globalThis.eval;
+[metro] > 621 |   const factory = evaluate(bundle);
+[metro]       |                   ^
+[metro]   622 |   if (typeof factory !== "function")
+[metro]   623 |     throw new Error(`Plugin ${id} client bundle is not executable`);
+[metro]   624 |   const exports = factory(runtimeRequire);
+[metro] Call Stack
+[metro]   runPluginClientBundle (packages/app/src/plugins/evaluate.ts:621:19)
+[metro]   RendererContent (packages/app/src/workspace-status/renderer.tsx:32:7)
+[metro]   WorkspaceStatusRenderer (packages/app/src/workspace-status/renderer.tsx:99:9)
+[metro]   SidebarWorkspaceRowContent (packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx:147:9)
+[metro]   SidebarWorkspaceRowFrame.props.children (packages/app/src/components/sidebar-workspace-list.tsx:1170:15)
+[metro]   SidebarWorkspaceRowFrame (packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx:82:8)
+[metro]   WorkspaceRowInner (packages/app/src/components/sidebar-workspace-list.tsx:1119:5)
+[metro]   WorkspaceRowWithMenu (packages/app/src/components/sidebar-workspace-list.tsx:1332:7)
+[metro]   WorkspaceRow (packages/app/src/components/sidebar-workspace-list.tsx:1524:5)
+[metro]   WorkspaceRowItem (packages/app/src/components/sidebar-workspace-list.tsx:1419:5)
+[metro]   renderWorkspaceRow (packages/app/src/components/sidebar-workspace-list.tsx:1645:9)
+[metro]   visibleWorkspaces.map$argument_0 (packages/app/src/components/sidebar-workspace-list.tsx:1788:48)
+[metro]   ProjectBlock (packages/app/src/components/sidebar-workspace-list.tsx:1788:33)
+[metro]   renderProjectBlock (packages/app/src/components/sidebar-workspace-list.tsx:2341:9)
+[metro]   renderProject (packages/app/src/components/sidebar-workspace-list.tsx:2396:7)
+[metro]   SortableItemInner (packages/app/src/components/draggable-list.web.tsx:180:8)
+[metro]   items.map$argument_0 (packages/app/src/components/draggable-list.web.tsx:294:19)
+[metro]   DraggableList (packages/app/src/components/draggable-list.web.tsx:291:21)
+[metro]   ProjectModeList (packages/app/src/components/sidebar-workspace-list.tsx:2447:5)
+[metro]   SidebarWorkspaceList (packages/app/src/components/sidebar-workspace-list.tsx:2011:5)
+[metro]   DesktopSidebar (packages/app/src/components/left-sidebar.tsx:767:11)
+[metro]   LeftSidebar (packages/app/src/components/left-sidebar.tsx:267:9)
+[metro]   SidebarChrome (packages/app/src/app/_layout.tsx:552:8)
+[metro]   AppContainer (packages/app/src/app/_layout.tsx:432:5)
+[metro]   AppWithSidebar (packages/app/src/app/_layout.tsx:780:10)
+[metro]   AppShell (packages/app/src/app/_layout.tsx:841:9)
+[metro]   RootAppTree (packages/app/src/app/_layout.tsx:897:15)
+[metro]   RootLayout (packages/app/src/app/_layout.tsx:917:10)
+[metro]   RootRouter (packages/app/src/root-app.tsx:35:15)
+[metro]   RootApp (packages/app/src/root-app.tsx:19:7)
+[metro] Web  WARN  [Plugins] Surface render failed [Error: fixture renderer failed] 
+[metro] Code: evaluate.ts
+[metro]   619 |   };
+[metro]   620 |   const evaluate: (source: string) => unknown = globalThis.eval;
+[metro] > 621 |   const factory = evaluate(bundle);
+[metro]       |                   ^
+[metro]   622 |   if (typeof factory !== "function")
+[metro]   623 |     throw new Error(`Plugin ${id} client bundle is not executable`);
+[metro]   624 |   const exports = factory(runtimeRequire);
+[metro] Call Stack
+[metro]   runPluginClientBundle (packages/app/src/plugins/evaluate.ts:621:19)
+[metro]   PluginTranslationProvider (packages/plugin/dist/client/translations.js:138:45)
+[metro]   PluginRpcProvider (packages/plugin/dist/client/rpc-context.js:8:8)
+[metro]   PaseoApiProvider (packages/plugin/dist/client/paseo-context.js:7:36)
+[metro]   PluginInstallationProvider (packages/app/src/plugins/installation-provider.tsx:11:8)
+[metro]   RendererContent (packages/app/src/workspace-status/renderer.tsx:25)
+[metro]   SurfaceErrorBoundary (packages/app/src/plugins/surface-error-boundary.tsx:17:8)
+[metro]   WorkspaceStatusRenderer (packages/app/src/workspace-status/renderer.tsx:44:8)
+[metro]   SidebarWorkspaceRowContent (packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx:92:48)
+[metro]   PressHighlight (packages/app/src/components/ui/press-highlight.tsx:6:69)
+[metro]   ContextMenuTrigger (packages/app/src/components/ui/context-menu.tsx:98:8)
+[metro]   MenuRoot (packages/app/src/components/ui/menu/menu-root.tsx:33:8)
+[metro]   ContextMenu (packages/app/src/components/ui/context-menu.tsx:49:8)
+[metro]   SidebarWorkspaceContextMenu (packages/app/src/components/sidebar/sidebar-workspace-menu.tsx:326:8)
+[metro]   HoverCardTrigger (packages/app/src/components/ui/hover-card.tsx:264:3)
+[metro]   OverlayLayerProvider (packages/app/src/lib/overlay-root.ts:78:40)
+[metro]   WebHoverCard (packages/app/src/components/ui/hover-card.tsx:76)
+[metro]   HoverCard (packages/app/src/components/ui/hover-card.tsx:64:8)
+[metro]   WorkspaceHoverCard (packages/app/src/components/workspace-hover-card.tsx:53:8)
+[metro]   SidebarWorkspaceRowFrame (packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx:46:8)
+[metro]   WorkspaceRowInner (packages/app/src/components/sidebar-workspace-list.tsx:1055:3)
+[metro]   WorkspaceRowWithMenu (packages/app/src/components/sidebar-workspace-list.tsx:1214)
+[metro]   WorkspaceRow (packages/app/src/components/sidebar-workspace-list.tsx:1484)
+[metro]   WorkspaceRowItem (packages/app/src/components/sidebar-workspace-list.tsx:1392)
+[metro]   ProjectBlock (packages/app/src/components/sidebar-workspace-list.tsx:1545)
+[metro]   SortableItemInner (packages/app/src/components/draggable-list.web.tsx:102:3)
+[metro]   DraggableList (packages/app/src/components/draggable-list.web.tsx:187:8)
+[metro]   ProjectModeList (packages/app/src/components/sidebar-workspace-list.tsx:2125)
+[metro]   SidebarWorkspaceList (packages/app/src/components/sidebar-workspace-list.tsx:1933:8)
+[metro]   DesktopSidebar (packages/app/src/components/left-sidebar.tsx:622:3)
+[metro]   RetainedPanelActivity (packages/app/src/components/retained-panel.tsx:22:8)
+[metro]   LeftSidebar (packages/app/src/components/left-sidebar.tsx:127:33)
+[metro]   SidebarModelProvider (packages/app/src/components/sidebar/sidebar-model.tsx:51:8)
+[metro]   SidebarChrome (packages/app/src/app/_layout.tsx:537)
+[metro]   AppearanceStyleBoundaryBase (packages/app/src/components/appearance-style-boundary.tsx:19)
+[metro]   AppearanceStyleBoundary (packages/app/src/components/appearance-style-boundary.tsx:73:8)
+[metro]   WindowChromeRegion (packages/app/src/utils/desktop-window.tsx:250:8)
+[metro]   SheetHostScope (packages/app/src/components/ui/isolated-bottom-sheet-modal/host-scope.tsx:32:8)
+[metro]   MobileGestureWrapper (packages/app/src/app/_layout.tsx:558)
+[metro]   CommandCenterProvider (packages/app/src/command-center/provider.tsx:14:41)
+[metro]   ComposerEditingSessionsProvider (packages/app/src/composer/editing-session/index.tsx:137:8)
+[metro]   AppContainerLifetime (packages/app/src/app/_layout.tsx:519)
+[metro]   AppContainer (packages/app/src/app/_layout.tsx:346)
+[metro]   AppWithSidebar (packages/app/src/app/_layout.tsx:764)
+[metro]   HorizontalScrollProvider (packages/app/src/contexts/horizontal-scroll-context.tsx:20:44)
+[metro]   MobilePanelsProvider (packages/app/src/mobile-panels/provider.tsx:71:40)
+[metro]   AppShell (packages/app/src/app/_layout.tsx:832)
+[metro]   VoiceProvider (packages/app/src/contexts/voice-context.tsx:115:33)
+[metro]   AppearanceProvider (packages/app/src/appearance/provider.tsx:59:8)
+[metro]   ProvidersWrapper (packages/app/src/app/_layout.tsx:581)
+[metro]   SidebarCalloutProvider (packages/app/src/contexts/sidebar-callout-context.tsx:51:42)
+[metro]   HostRuntimeBootstrapProvider (packages/app/src/app/_layout.tsx:257)
+[metro]   RuntimeProviders (packages/app/src/app/_layout.tsx:855)
+[metro]   ToastApiProvider (packages/app/src/contexts/toast-api-context.tsx:14:8)
+[metro]   ToastProvider (packages/app/src/contexts/toast-context.tsx:7:8)
+[metro]   KeyboardShiftProvider (packages/app/src/keyboard/shift/internal/provider.ts:27:41)
+[metro]   WindowChromeProvider (packages/app/src/utils/desktop-window.tsx:131:40)
+[metro]   KeyboardActionDispatcherProvider (packages/app/src/keyboard/keyboard-action-dispatcher-context.tsx:9:52)
+[metro]   RootProviders (packages/app/src/app/_layout.tsx:872)
+[metro]   RootAppTree (packages/app/src/app/_layout.tsx:890)
+[metro]   RootLayout (packages/app/src/app/_layout.tsx:906:16)
+[metro]   RootErrorBoundary (packages/app/src/components/root-error-boundary.tsx:20:8)
+[metro]   I18nProvider (packages/app/src/i18n/provider.tsx:22:8)
+[metro]   RootRouter (packages/app/src/root-app.tsx:24:8)
+[metro]   RenderProfile (packages/app/src/utils/render-profiler.tsx:75:8)
+[metro]   RootApp (packages/app/src/root-app.tsx:16:8)
+[metro] Web  ERROR  
+[metro] Code: evaluate.ts
+[metro]   619 |   };
+[metro]   620 |   const evaluate: (source: string) => unknown = globalThis.eval;
+[metro] > 621 |   const factory = evaluate(bundle);
+[metro]       |                   ^
+[metro]   622 |   if (typeof factory !== "function")
+[metro]   623 |     throw new Error(`Plugin ${id} client bundle is not executable`);
+[metro]   624 |   const exports = factory(runtimeRequire);
+[metro] Call Stack
+[metro]   runPluginClientBundle (packages/app/src/plugins/evaluate.ts:621:19)
+[metro]   RendererContent (packages/app/src/workspace-status/renderer.tsx:32:7)
+[metro]   WorkspaceStatusRenderer (packages/app/src/workspace-status/renderer.tsx:99:9)
+[metro]   SidebarWorkspaceRowContent (packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx:147:9)
+[metro]   SidebarWorkspaceRowFrame.props.children (packages/app/src/components/sidebar-workspace-list.tsx:1170:15)
+[metro]   SidebarWorkspaceRowFrame (packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx:82:8)
+[metro]   WorkspaceRowInner (packages/app/src/components/sidebar-workspace-list.tsx:1119:5)
+[metro]   WorkspaceRowWithMenu (packages/app/src/components/sidebar-workspace-list.tsx:1332:7)
+[metro]   WorkspaceRow (packages/app/src/components/sidebar-workspace-list.tsx:1524:5)
+[metro]   WorkspaceRowItem (packages/app/src/components/sidebar-workspace-list.tsx:1419:5)
+[metro]   renderWorkspaceRow (packages/app/src/components/sidebar-workspace-list.tsx:1645:9)
+[metro]   visibleWorkspaces.map$argument_0 (packages/app/src/components/sidebar-workspace-list.tsx:1788:48)
+[metro]   ProjectBlock (packages/app/src/components/sidebar-workspace-list.tsx:1788:33)
+[metro]   renderProjectBlock (packages/app/src/components/sidebar-workspace-list.tsx:2341:9)
+[metro]   renderProject (packages/app/src/components/sidebar-workspace-list.tsx:2396:7)
+[metro]   SortableItemInner (packages/app/src/components/draggable-list.web.tsx:180:8)
+[metro]   items.map$argument_0 (packages/app/src/components/draggable-list.web.tsx:294:19)
+[metro]   DraggableList (packages/app/src/components/draggable-list.web.tsx:291:21)
+[metro]   ProjectModeList (packages/app/src/components/sidebar-workspace-list.tsx:2447:5)
+[metro]   SidebarWorkspaceList (packages/app/src/components/sidebar-workspace-list.tsx:2011:5)
+[metro]   DesktopSidebar (packages/app/src/components/left-sidebar.tsx:767:11)
+[metro]   LeftSidebar (packages/app/src/components/left-sidebar.tsx:267:9)
+[metro]   SidebarChrome (packages/app/src/app/_layout.tsx:552:8)
+[metro]   AppContainer (packages/app/src/app/_layout.tsx:432:5)
+[metro]   AppWithSidebar (packages/app/src/app/_layout.tsx:780:10)
+[metro]   AppShell (packages/app/src/app/_layout.tsx:841:9)
+[metro]   RootAppTree (packages/app/src/app/_layout.tsx:897:15)
+[metro]   RootLayout (packages/app/src/app/_layout.tsx:917:10)
+[metro]   RootRouter (packages/app/src/root-app.tsx:35:15)
+[metro]   RootApp (packages/app/src/root-app.tsx:19:7)
+[metro] Web  WARN  [Plugins] Surface render failed [Error: fixture renderer failed] 
+[metro] Code: evaluate.ts
+[metro]   619 |   };
+[metro]   620 |   const evaluate: (source: string) => unknown = globalThis.eval;
+[metro] > 621 |   const factory = evaluate(bundle);
+[metro]       |                   ^
+[metro]   622 |   if (typeof factory !== "function")
+[metro]   623 |     throw new Error(`Plugin ${id} client bundle is not executable`);
+[metro]   624 |   const exports = factory(runtimeRequire);
+[metro] Call Stack
+[metro]   runPluginClientBundle (packages/app/src/plugins/evaluate.ts:621:19)
+[metro]   PluginTranslationProvider (packages/plugin/dist/client/translations.js:138:45)
+[metro]   PluginRpcProvider (packages/plugin/dist/client/rpc-context.js:8:8)
+[metro]   PaseoApiProvider (packages/plugin/dist/client/paseo-context.js:7:36)
+[metro]   PluginInstallationProvider (packages/app/src/plugins/installation-provider.tsx:11:8)
+[metro]   RendererContent (packages/app/src/workspace-status/renderer.tsx:25)
+[metro]   SurfaceErrorBoundary (packages/app/src/plugins/surface-error-boundary.tsx:17:8)
+[metro]   WorkspaceStatusRenderer (packages/app/src/workspace-status/renderer.tsx:44:8)
+[metro]   SidebarWorkspaceRowContent (packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx:92:48)
+[metro]   PressHighlight (packages/app/src/components/ui/press-highlight.tsx:6:69)
+[metro]   ContextMenuTrigger (packages/app/src/components/ui/context-menu.tsx:98:8)
+[metro]   MenuRoot (packages/app/src/components/ui/menu/menu-root.tsx:33:8)
+[metro]   ContextMenu (packages/app/src/components/ui/context-menu.tsx:49:8)
+[metro]   SidebarWorkspaceContextMenu (packages/app/src/components/sidebar/sidebar-workspace-menu.tsx:326:8)
+[metro]   HoverCardTrigger (packages/app/src/components/ui/hover-card.tsx:264:3)
+[metro]   OverlayLayerProvider (packages/app/src/lib/overlay-root.ts:78:40)
+[metro]   WebHoverCard (packages/app/src/components/ui/hover-card.tsx:76)
+[metro]   HoverCard (packages/app/src/components/ui/hover-card.tsx:64:8)
+[metro]   WorkspaceHoverCard (packages/app/src/components/workspace-hover-card.tsx:53:8)
+[metro]   SidebarWorkspaceRowFrame (packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx:46:8)
+[metro]   WorkspaceRowInner (packages/app/src/components/sidebar-workspace-list.tsx:1055:3)
+[metro]   WorkspaceRowWithMenu (packages/app/src/components/sidebar-workspace-list.tsx:1214)
+[metro]   WorkspaceRow (packages/app/src/components/sidebar-workspace-list.tsx:1484)
+[metro]   WorkspaceRowItem (packages/app/src/components/sidebar-workspace-list.tsx:1392)
+[metro]   ProjectBlock (packages/app/src/components/sidebar-workspace-list.tsx:1545)
+[metro]   SortableItemInner (packages/app/src/components/draggable-list.web.tsx:102:3)
+[metro]   DraggableList (packages/app/src/components/draggable-list.web.tsx:187:8)
+[metro]   ProjectModeList (packages/app/src/components/sidebar-workspace-list.tsx:2125)
+[metro]   SidebarWorkspaceList (packages/app/src/components/sidebar-workspace-list.tsx:1933:8)
+[metro]   DesktopSidebar (packages/app/src/components/left-sidebar.tsx:622:3)
+[metro]   RetainedPanelActivity (packages/app/src/components/retained-panel.tsx:22:8)
+[metro]   LeftSidebar (packages/app/src/components/left-sidebar.tsx:127:33)
+[metro]   SidebarModelProvider (packages/app/src/components/sidebar/sidebar-model.tsx:51:8)
+[metro]   SidebarChrome (packages/app/src/app/_layout.tsx:537)
+[metro]   AppearanceStyleBoundaryBase (packages/app/src/components/appearance-style-boundary.tsx:19)
+[metro]   AppearanceStyleBoundary (packages/app/src/components/appearance-style-boundary.tsx:73:8)
+[metro]   WindowChromeRegion (packages/app/src/utils/desktop-window.tsx:250:8)
+[metro]   SheetHostScope (packages/app/src/components/ui/isolated-bottom-sheet-modal/host-scope.tsx:32:8)
+[metro]   MobileGestureWrapper (packages/app/src/app/_layout.tsx:558)
+[metro]   CommandCenterProvider (packages/app/src/command-center/provider.tsx:14:41)
+[metro]   ComposerEditingSessionsProvider (packages/app/src/composer/editing-session/index.tsx:137:8)
+[metro]   AppContainerLifetime (packages/app/src/app/_layout.tsx:519)
+[metro]   AppContainer (packages/app/src/app/_layout.tsx:346)
+[metro]   AppWithSidebar (packages/app/src/app/_layout.tsx:764)
+[metro]   HorizontalScrollProvider (packages/app/src/contexts/horizontal-scroll-context.tsx:20:44)
+[metro]   MobilePanelsProvider (packages/app/src/mobile-panels/provider.tsx:71:40)
+[metro]   AppShell (packages/app/src/app/_layout.tsx:832)
+[metro]   VoiceProvider (packages/app/src/contexts/voice-context.tsx:115:33)
+[metro]   AppearanceProvider (packages/app/src/appearance/provider.tsx:59:8)
+[metro]   ProvidersWrapper (packages/app/src/app/_layout.tsx:581)
+[metro]   SidebarCalloutProvider (packages/app/src/contexts/sidebar-callout-context.tsx:51:42)
+[metro]   HostRuntimeBootstrapProvider (packages/app/src/app/_layout.tsx:257)
+[metro]   RuntimeProviders (packages/app/src/app/_layout.tsx:855)
+[metro]   ToastApiProvider (packages/app/src/contexts/toast-api-context.tsx:14:8)
+[metro]   ToastProvider (packages/app/src/contexts/toast-context.tsx:7:8)
+[metro]   KeyboardShiftProvider (packages/app/src/keyboard/shift/internal/provider.ts:27:41)
+[metro]   WindowChromeProvider (packages/app/src/utils/desktop-window.tsx:131:40)
+[metro]   KeyboardActionDispatcherProvider (packages/app/src/keyboard/keyboard-action-dispatcher-context.tsx:9:52)
+[metro]   RootProviders (packages/app/src/app/_layout.tsx:872)
+[metro]   RootAppTree (packages/app/src/app/_layout.tsx:890)
+[metro]   RootLayout (packages/app/src/app/_layout.tsx:906:16)
+[metro]   RootErrorBoundary (packages/app/src/components/root-error-boundary.tsx:20:8)
+[metro]   I18nProvider (packages/app/src/i18n/provider.tsx:22:8)
+[metro]   RootRouter (packages/app/src/root-app.tsx:24:8)
+[metro]   RenderProfile (packages/app/src/utils/render-profiler.tsx:75:8)
+[metro]   RootApp (packages/app/src/root-app.tsx:16:8)
+[metro] Web  ERROR  
+[metro] Code: evaluate.ts
+[metro]   619 |   };
+[metro]   620 |   const evaluate: (source: string) => unknown = globalThis.eval;
+[metro] > 621 |   const factory = evaluate(bundle);
+[metro]       |                   ^
+[metro]   622 |   if (typeof factory !== "function")
+[metro]   623 |     throw new Error(`Plugin ${id} client bundle is not executable`);
+[metro]   624 |   const exports = factory(runtimeRequire);
+[metro] Call Stack
+[metro]   runPluginClientBundle (packages/app/src/plugins/evaluate.ts:621:19)
+[metro]   RendererContent (packages/app/src/workspace-status/renderer.tsx:32:7)
+[metro]   WorkspaceStatusRenderer (packages/app/src/workspace-status/renderer.tsx:99:9)
+[metro]   SidebarWorkspaceRowContent (packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx:147:9)
+[metro]   SidebarWorkspaceRowFrame.props.children (packages/app/src/components/sidebar-workspace-list.tsx:1170:15)
+[metro]   SidebarWorkspaceRowFrame (packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx:82:8)
+[metro]   WorkspaceRowInner (packages/app/src/components/sidebar-workspace-list.tsx:1119:5)
+[metro]   WorkspaceRowWithMenu (packages/app/src/components/sidebar-workspace-list.tsx:1332:7)
+[metro]   WorkspaceRow (packages/app/src/components/sidebar-workspace-list.tsx:1524:5)
+[metro]   WorkspaceRowItem (packages/app/src/components/sidebar-workspace-list.tsx:1419:5)
+[metro]   renderWorkspaceRow (packages/app/src/components/sidebar-workspace-list.tsx:1645:9)
+[metro]   visibleWorkspaces.map$argument_0 (packages/app/src/components/sidebar-workspace-list.tsx:1788:48)
+[metro]   ProjectBlock (packages/app/src/components/sidebar-workspace-list.tsx:1788:33)
+[metro]   renderProjectBlock (packages/app/src/components/sidebar-workspace-list.tsx:2341:9)
+[metro]   renderProject (packages/app/src/components/sidebar-workspace-list.tsx:2396:7)
+[metro]   SortableItemInner (packages/app/src/components/draggable-list.web.tsx:180:8)
+[metro]   items.map$argument_0 (packages/app/src/components/draggable-list.web.tsx:294:19)
+[metro]   DraggableList (packages/app/src/components/draggable-list.web.tsx:291:21)
+[metro]   ProjectModeList (packages/app/src/components/sidebar-workspace-list.tsx:2447:5)
+[metro]   SidebarWorkspaceList (packages/app/src/components/sidebar-workspace-list.tsx:2011:5)
+[metro]   DesktopSidebar (packages/app/src/components/left-sidebar.tsx:767:11)
+[metro]   LeftSidebar (packages/app/src/components/left-sidebar.tsx:267:9)
+[metro]   SidebarChrome (packages/app/src/app/_layout.tsx:552:8)
+[metro]   AppContainer (packages/app/src/app/_layout.tsx:432:5)
+[metro]   AppWithSidebar (packages/app/src/app/_layout.tsx:780:10)
+[metro]   AppShell (packages/app/src/app/_layout.tsx:841:9)
+[metro]   RootAppTree (packages/app/src/app/_layout.tsx:897:15)
+[metro]   RootLayout (packages/app/src/app/_layout.tsx:917:10)
+[metro]   RootRouter (packages/app/src/root-app.tsx:35:15)
+[metro]   RootApp (packages/app/src/root-app.tsx:19:7)
+[metro] Web  WARN  [Plugins] Surface render failed [Error: fixture renderer failed] 
+[metro] Code: evaluate.ts
+[metro]   619 |   };
+[metro]   620 |   const evaluate: (source: string) => unknown = globalThis.eval;
+[metro] > 621 |   const factory = evaluate(bundle);
+[metro]       |                   ^
+[metro]   622 |   if (typeof factory !== "function")
+[metro]   623 |     throw new Error(`Plugin ${id} client bundle is not executable`);
+[metro]   624 |   const exports = factory(runtimeRequire);
+[metro] Call Stack
+[metro]   runPluginClientBundle (packages/app/src/plugins/evaluate.ts:621:19)
+[metro]   PluginTranslationProvider (packages/plugin/dist/client/translations.js:138:45)
+[metro]   PluginRpcProvider (packages/plugin/dist/client/rpc-context.js:8:8)
+[metro]   PaseoApiProvider (packages/plugin/dist/client/paseo-context.js:7:36)
+[metro]   PluginInstallationProvider (packages/app/src/plugins/installation-provider.tsx:11:8)
+[metro]   RendererContent (packages/app/src/workspace-status/renderer.tsx:25)
+[metro]   SurfaceErrorBoundary (packages/app/src/plugins/surface-error-boundary.tsx:17:8)
+[metro]   WorkspaceStatusRenderer (packages/app/src/workspace-status/renderer.tsx:44:8)
+[metro]   SidebarWorkspaceRowContent (packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx:92:48)
+[metro]   PressHighlight (packages/app/src/components/ui/press-highlight.tsx:6:69)
+[metro]   ContextMenuTrigger (packages/app/src/components/ui/context-menu.tsx:98:8)
+[metro]   MenuRoot (packages/app/src/components/ui/menu/menu-root.tsx:33:8)
+[metro]   ContextMenu (packages/app/src/components/ui/context-menu.tsx:49:8)
+[metro]   SidebarWorkspaceContextMenu (packages/app/src/components/sidebar/sidebar-workspace-menu.tsx:326:8)
+[metro]   HoverCardTrigger (packages/app/src/components/ui/hover-card.tsx:264:3)
+[metro]   OverlayLayerProvider (packages/app/src/lib/overlay-root.ts:78:40)
+[metro]   WebHoverCard (packages/app/src/components/ui/hover-card.tsx:76)
+[metro]   HoverCard (packages/app/src/components/ui/hover-card.tsx:64:8)
+[metro]   WorkspaceHoverCard (packages/app/src/components/workspace-hover-card.tsx:53:8)
+[metro]   SidebarWorkspaceRowFrame (packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx:46:8)
+[metro]   WorkspaceRowInner (packages/app/src/components/sidebar-workspace-list.tsx:1055:3)
+[metro]   WorkspaceRowWithMenu (packages/app/src/components/sidebar-workspace-list.tsx:1214)
+[metro]   WorkspaceRow (packages/app/src/components/sidebar-workspace-list.tsx:1484)
+[metro]   WorkspaceRowItem (packages/app/src/components/sidebar-workspace-list.tsx:1392)
+[metro]   ProjectBlock (packages/app/src/components/sidebar-workspace-list.tsx:1545)
+[metro]   SortableItemInner (packages/app/src/components/draggable-list.web.tsx:102:3)
+[metro]   DraggableList (packages/app/src/components/draggable-list.web.tsx:187:8)
+[metro]   ProjectModeList (packages/app/src/components/sidebar-workspace-list.tsx:2125)
+[metro]   SidebarWorkspaceList (packages/app/src/components/sidebar-workspace-list.tsx:1933:8)
+[metro]   DesktopSidebar (packages/app/src/components/left-sidebar.tsx:622:3)
+[metro]   RetainedPanelActivity (packages/app/src/components/retained-panel.tsx:22:8)
+[metro]   LeftSidebar (packages/app/src/components/left-sidebar.tsx:127:33)
+[metro]   SidebarModelProvider (packages/app/src/components/sidebar/sidebar-model.tsx:51:8)
+[metro]   SidebarChrome (packages/app/src/app/_layout.tsx:537)
+[metro]   AppearanceStyleBoundaryBase (packages/app/src/components/appearance-style-boundary.tsx:19)
+[metro]   AppearanceStyleBoundary (packages/app/src/components/appearance-style-boundary.tsx:73:8)
+[metro]   WindowChromeRegion (packages/app/src/utils/desktop-window.tsx:250:8)
+[metro]   SheetHostScope (packages/app/src/components/ui/isolated-bottom-sheet-modal/host-scope.tsx:32:8)
+[metro]   MobileGestureWrapper (packages/app/src/app/_layout.tsx:558)
+[metro]   CommandCenterProvider (packages/app/src/command-center/provider.tsx:14:41)
+[metro]   ComposerEditingSessionsProvider (packages/app/src/composer/editing-session/index.tsx:137:8)
+[metro]   AppContainerLifetime (packages/app/src/app/_layout.tsx:519)
+[metro]   AppContainer (packages/app/src/app/_layout.tsx:346)
+[metro]   AppWithSidebar (packages/app/src/app/_layout.tsx:764)
+[metro]   HorizontalScrollProvider (packages/app/src/contexts/horizontal-scroll-context.tsx:20:44)
+[metro]   MobilePanelsProvider (packages/app/src/mobile-panels/provider.tsx:71:40)
+[metro]   AppShell (packages/app/src/app/_layout.tsx:832)
+[metro]   VoiceProvider (packages/app/src/contexts/voice-context.tsx:115:33)
+[metro]   AppearanceProvider (packages/app/src/appearance/provider.tsx:59:8)
+[metro]   ProvidersWrapper (packages/app/src/app/_layout.tsx:581)
+[metro]   SidebarCalloutProvider (packages/app/src/contexts/sidebar-callout-context.tsx:51:42)
+[metro]   HostRuntimeBootstrapProvider (packages/app/src/app/_layout.tsx:257)
+[metro]   RuntimeProviders (packages/app/src/app/_layout.tsx:855)
+[metro]   ToastApiProvider (packages/app/src/contexts/toast-api-context.tsx:14:8)
+[metro]   ToastProvider (packages/app/src/contexts/toast-context.tsx:7:8)
+[metro]   KeyboardShiftProvider (packages/app/src/keyboard/shift/internal/provider.ts:27:41)
+[metro]   WindowChromeProvider (packages/app/src/utils/desktop-window.tsx:131:40)
+[metro]   KeyboardActionDispatcherProvider (packages/app/src/keyboard/keyboard-action-dispatcher-context.tsx:9:52)
+[metro]   RootProviders (packages/app/src/app/_layout.tsx:872)
+[metro]   RootAppTree (packages/app/src/app/_layout.tsx:890)
+[metro]   RootLayout (packages/app/src/app/_layout.tsx:906:16)
+[metro]   RootErrorBoundary (packages/app/src/components/root-error-boundary.tsx:20:8)
+[metro]   I18nProvider (packages/app/src/i18n/provider.tsx:22:8)
+[metro]   RootRouter (packages/app/src/root-app.tsx:24:8)
+[metro]   RenderProfile (packages/app/src/utils/render-profiler.tsx:75:8)
+[metro]   RootApp (packages/app/src/root-app.tsx:16:8)
+  ✓  6 [browser] › e2e/browser/plugin-workspace-activities.spec.ts:109:5 › workspace status renderer receives native state and task members and restores the default (4.1s)
+[e2e] Worker 0 daemon stopped
+[e2e] Metro stopped
+
+  6 passed (49.0s)
++ npm run format
+
+> paseo@0.14.0-beta.1 format
+> oxfmt .
+
+Finished in 1213ms on 5540 files using 16 threads.
++ git diff --check
++ git add -- docs/plugins.md public-docs/plugins/reference.md public-docs/sdk/reference.md packages/app packages/client packages/plugin packages/protocol packages/server
++ git commit -m 'feat(plugins): extend appearance and workspace UI contribution APIs'
+╭──────────────────────────────────────╮
+│ 🥊 lefthook v2.1.6  hook: pre-commit │
+╰──────────────────────────────────────╯
+┃  format ❯ 
+
+
+> paseo@0.14.0-beta.1 format:check:files
+> oxfmt --check docs/plugins.md packages/app/e2e/browser/plugin-floating-widget.spec.ts packages/app/e2e/browser/plugin-provider-icons.spec.ts packages/app/e2e/browser/plugin-theme.spec.ts packages/app/e2e/browser/plugin-workspace-activities.spec.ts packages/app/e2e/support/helpers/plugin-provider-icons.ts packages/app/src/app/_layout.tsx packages/app/src/appearance/apply.test.ts packages/app/src/components/project-icon-view.tsx packages/app/src/components/provider-icons.test.ts packages/app/src/components/provider-icons.ts packages/app/src/components/sidebar-workspace-list.tsx packages/app/src/components/sidebar/project-leading-visual.tsx packages/app/src/components/sidebar/sidebar-status-list.tsx packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx packages/app/src/components/sidebar/sidebar-workspace-row.tsx packages/app/src/components/sidebar/workspace-activity.tsx packages/app/src/components/status-icon.tsx packages/app/src/components/status-ring/frame.tsx packages/app/src/components/status-ring/geometry.ts packages/app/src/components/status-ring/index.tsx packages/app/src/components/status-ring/index.web.tsx packages/app/src/components/svg-icon.ts packages/app/src/components/ui/button.tsx packages/app/src/components/ui/control-geometry.test.ts packages/app/src/components/ui/control-geometry.ts packages/app/src/components/ui/icon-button-chrome.ts packages/app/src/components/workspace-hover-card.tsx packages/app/src/data/provider-icons.ts packages/app/src/hooks/sidebar-workspaces-view-model.test.ts packages/app/src/hooks/sidebar-workspaces-view-model.ts packages/app/src/hooks/use-project-activities.ts packages/app/src/i18n/resources/ar.ts packages/app/src/i18n/resources/en.ts packages/app/src/i18n/resources/es.ts packages/app/src/i18n/resources/fr.ts packages/app/src/i18n/resources/ja.ts packages/app/src/i18n/resources/ko.ts packages/app/src/i18n/resources/pt-BR.ts packages/app/src/i18n/resources/ru.ts packages/app/src/i18n/resources/zh-CN.ts packages/app/src/plugins/buttons/model.test.ts packages/app/src/plugins/client-state/snapshots.test.ts packages/app/src/plugins/client-state/snapshots.ts packages/app/src/plugins/command-center/contributions.test.ts packages/app/src/plugins/evaluate.test.ts packages/app/src/plugins/evaluate.ts packages/app/src/plugins/floating-widgets/drag-handle.test.tsx packages/app/src/plugins/floating-widgets/drag-handle.tsx packages/app/src/plugins/floating-widgets/index.tsx packages/app/src/plugins/floating-widgets/model.test.ts packages/app/src/plugins/floating-widgets/model.ts packages/app/src/plugins/floating-widgets/validation.test.ts packages/app/src/plugins/floating-widgets/validation.ts packages/app/src/plugins/floating-widgets/widget.test.tsx packages/app/src/plugins/floating-widgets/widget.tsx packages/app/src/plugins/icons.ts packages/app/src/plugins/installation-provider.test.tsx packages/app/src/plugins/registry.ts packages/app/src/plugins/sidebar-groups.test.ts packages/app/src/plugins/surface-contribution.test.ts packages/app/src/plugins/theme.test.ts packages/app/src/plugins/themes/index.ts packages/app/src/plugins/timeline/model.test.ts packages/app/src/plugins/types.ts packages/app/src/plugins/workspace-panels/resolution.test.ts packages/app/src/stores/session-store.ts packages/app/src/styles/sidebar-geometry.ts packages/app/src/styles/theme.ts packages/app/src/utils/status-dot-color.ts packages/app/src/workspace-status/activities.test.ts packages/app/src/workspace-status/activities.ts packages/app/src/workspace-status/renderer-model.test.ts packages/app/src/workspace-status/renderer-model.ts packages/app/src/workspace-status/renderer.test.tsx packages/app/src/workspace-status/renderer.tsx packages/app/test-stubs/lucide-react-native.ts packages/app/test-stubs/react-native-unistyles.ts packages/client/src/index.test.ts packages/client/src/index.ts packages/plugin/src/client/contracts.ts packages/plugin/src/client/floating-widgets.ts packages/plugin/src/client/index.ts packages/plugin/src/client/provider-icons.ts packages/plugin/src/client/workspace-status.ts packages/plugin/src/contracts.ts packages/plugin/src/index.ts packages/plugin/src/server/contracts.ts packages/plugin/src/server/index.ts packages/plugin/src/server/workspace-activity.ts packages/protocol/src/messages.ts packages/protocol/src/workspace-activity.ts packages/server/src/server/bootstrap.ts packages/server/src/server/plugins/index.ts packages/server/src/server/plugins/plugin-paseo-api.e2e.test.ts packages/server/src/server/plugins/plugin-process-protocol.ts packages/server/src/server/plugins/plugin-process.ts packages/server/src/server/plugins/runtime.posix.test.ts packages/server/src/server/plugins/runtime.ts packages/server/src/server/plugins/worker-workspace-activities.ts packages/server/src/server/plugins/workspace-activities.test.ts packages/server/src/server/plugins/workspace-activities.ts packages/server/src/server/session.ts packages/server/src/server/websocket-server.ts packages/server/src/server/workspace-directory.test.ts packages/server/src/server/workspace-directory.ts public-docs/plugins/reference.md public-docs/sdk/reference.md
+
+Checking formatting...
+
+All matched files use the correct format.
+Finished in 374ms on 108 files using 16 threads.
+
+┃  lint ❯ 
+
+
+> paseo@0.14.0-beta.1 lint
+> oxlint packages/app/e2e/browser/plugin-floating-widget.spec.ts packages/app/e2e/browser/plugin-provider-icons.spec.ts packages/app/e2e/browser/plugin-theme.spec.ts packages/app/e2e/browser/plugin-workspace-activities.spec.ts packages/app/e2e/support/helpers/plugin-provider-icons.ts packages/app/src/app/_layout.tsx packages/app/src/appearance/apply.test.ts packages/app/src/components/project-icon-view.tsx packages/app/src/components/provider-icons.test.ts packages/app/src/components/provider-icons.ts packages/app/src/components/sidebar-workspace-list.tsx packages/app/src/components/sidebar/project-leading-visual.tsx packages/app/src/components/sidebar/sidebar-status-list.tsx packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx packages/app/src/components/sidebar/sidebar-workspace-row.tsx packages/app/src/components/sidebar/workspace-activity.tsx packages/app/src/components/status-icon.tsx packages/app/src/components/status-ring/frame.tsx packages/app/src/components/status-ring/geometry.ts packages/app/src/components/status-ring/index.tsx packages/app/src/components/status-ring/index.web.tsx packages/app/src/components/svg-icon.ts packages/app/src/components/ui/button.tsx packages/app/src/components/ui/control-geometry.test.ts packages/app/src/components/ui/control-geometry.ts packages/app/src/components/ui/icon-button-chrome.ts packages/app/src/components/workspace-hover-card.tsx packages/app/src/data/provider-icons.ts packages/app/src/hooks/sidebar-workspaces-view-model.test.ts packages/app/src/hooks/sidebar-workspaces-view-model.ts packages/app/src/hooks/use-project-activities.ts packages/app/src/i18n/resources/ar.ts packages/app/src/i18n/resources/en.ts packages/app/src/i18n/resources/es.ts packages/app/src/i18n/resources/fr.ts packages/app/src/i18n/resources/ja.ts packages/app/src/i18n/resources/ko.ts packages/app/src/i18n/resources/pt-BR.ts packages/app/src/i18n/resources/ru.ts packages/app/src/i18n/resources/zh-CN.ts packages/app/src/plugins/buttons/model.test.ts packages/app/src/plugins/client-state/snapshots.test.ts packages/app/src/plugins/client-state/snapshots.ts packages/app/src/plugins/command-center/contributions.test.ts packages/app/src/plugins/evaluate.test.ts packages/app/src/plugins/evaluate.ts packages/app/src/plugins/floating-widgets/drag-handle.test.tsx packages/app/src/plugins/floating-widgets/drag-handle.tsx packages/app/src/plugins/floating-widgets/index.tsx packages/app/src/plugins/floating-widgets/model.test.ts packages/app/src/plugins/floating-widgets/model.ts packages/app/src/plugins/floating-widgets/validation.test.ts packages/app/src/plugins/floating-widgets/validation.ts packages/app/src/plugins/floating-widgets/widget.test.tsx packages/app/src/plugins/floating-widgets/widget.tsx packages/app/src/plugins/icons.ts packages/app/src/plugins/installation-provider.test.tsx packages/app/src/plugins/registry.ts packages/app/src/plugins/sidebar-groups.test.ts packages/app/src/plugins/surface-contribution.test.ts packages/app/src/plugins/theme.test.ts packages/app/src/plugins/themes/index.ts packages/app/src/plugins/timeline/model.test.ts packages/app/src/plugins/types.ts packages/app/src/plugins/workspace-panels/resolution.test.ts packages/app/src/stores/session-store.ts packages/app/src/styles/sidebar-geometry.ts packages/app/src/styles/theme.ts packages/app/src/utils/status-dot-color.ts packages/app/src/workspace-status/activities.test.ts packages/app/src/workspace-status/activities.ts packages/app/src/workspace-status/renderer-model.test.ts packages/app/src/workspace-status/renderer-model.ts packages/app/src/workspace-status/renderer.test.tsx packages/app/src/workspace-status/renderer.tsx packages/app/test-stubs/lucide-react-native.ts packages/app/test-stubs/react-native-unistyles.ts packages/client/src/index.test.ts packages/client/src/index.ts packages/plugin/src/client/contracts.ts packages/plugin/src/client/floating-widgets.ts packages/plugin/src/client/index.ts packages/plugin/src/client/provider-icons.ts packages/plugin/src/client/workspace-status.ts packages/plugin/src/contracts.ts packages/plugin/src/index.ts packages/plugin/src/server/contracts.ts packages/plugin/src/server/index.ts packages/plugin/src/server/workspace-activity.ts packages/protocol/src/messages.ts packages/protocol/src/workspace-activity.ts packages/server/src/server/bootstrap.ts packages/server/src/server/plugins/index.ts packages/server/src/server/plugins/plugin-paseo-api.e2e.test.ts packages/server/src/server/plugins/plugin-process-protocol.ts packages/server/src/server/plugins/plugin-process.ts packages/server/src/server/plugins/runtime.posix.test.ts packages/server/src/server/plugins/runtime.ts packages/server/src/server/plugins/worker-workspace-activities.ts packages/server/src/server/plugins/workspace-activities.test.ts packages/server/src/server/plugins/workspace-activities.ts packages/server/src/server/session.ts packages/server/src/server/websocket-server.ts packages/server/src/server/workspace-directory.test.ts packages/server/src/server/workspace-directory.ts
+
+Found 0 warnings and 0 errors.
+Finished in 441ms on 105 files with 177 rules using 16 threads.
+
+┃  typecheck ❯ 
+
+
+> paseo@0.14.0-beta.1 typecheck
+> npm run typecheck --workspaces --if-present
+
+
+> @getpaseo/builtin-plugins@0.14.0-beta.1 typecheck
+> tsgo -p tsconfig.json --noEmit
+
+
+> @getpaseo/expo-two-way-audio@0.14.0-beta.1 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/highlight@0.14.0-beta.1 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/plugin@0.14.0-beta.1 typecheck
+> tsgo --noEmit && npm run typecheck:examples
+
+
+> @getpaseo/plugin@0.14.0-beta.1 typecheck:examples
+> npm --prefix ../../plugin-examples/markdown-panel install --ignore-scripts --no-audit --no-fund && tsgo -p tsconfig.examples.json --noEmit
+
+
+up to date in 209ms
+
+> @getpaseo/protocol@0.14.0-beta.1 pretypecheck
+> npm run generate:validators
+
+
+> @getpaseo/protocol@0.14.0-beta.1 generate:validators
+> node scripts/generate-validation-aot.mjs
+
+generated src/generated/validation/ws-outbound.aot.ts: envelope + 237 session message validators
+
+> @getpaseo/protocol@0.14.0-beta.1 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/client@0.14.0-beta.1 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/server@0.14.0-beta.1 typecheck
+> tsgo -p tsconfig.server.typecheck.json --noEmit
+
+
+> @getpaseo/app@0.14.0-beta.1 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/relay@0.14.0-beta.1 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/website@0.14.0-beta.1 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/desktop@0.14.0-beta.1 typecheck
+> tsgo --noEmit -p tsconfig.json
+
+
+> @getpaseo/cli@0.14.0-beta.1 typecheck
+> tsgo --noEmit
+
+
+                                      
+  ────────────────────────────────────
+summary: (done in 10.88 seconds)      
+✔️ format (0.61 seconds)
+✔️ lint (0.62 seconds)
+✔️ typecheck (10.84 seconds)
+[feat/plugin-api-upgrade 804d1658e] feat(plugins): extend appearance and workspace UI contribution APIs
+ 108 files changed, 5738 insertions(+), 239 deletions(-)
+ create mode 100644 packages/app/e2e/browser/plugin-floating-widget.spec.ts
+ create mode 100644 packages/app/e2e/browser/plugin-workspace-activities.spec.ts
+ create mode 100644 packages/app/src/components/sidebar/workspace-activity.tsx
+ create mode 100644 packages/app/src/components/svg-icon.ts
+ create mode 100644 packages/app/src/hooks/use-project-activities.ts
+ create mode 100644 packages/app/src/plugins/floating-widgets/drag-handle.test.tsx
+ create mode 100644 packages/app/src/plugins/floating-widgets/drag-handle.tsx
+ create mode 100644 packages/app/src/plugins/floating-widgets/index.tsx
+ create mode 100644 packages/app/src/plugins/floating-widgets/model.test.ts
+ create mode 100644 packages/app/src/plugins/floating-widgets/model.ts
+ create mode 100644 packages/app/src/plugins/floating-widgets/validation.test.ts
+ create mode 100644 packages/app/src/plugins/floating-widgets/validation.ts
+ create mode 100644 packages/app/src/plugins/floating-widgets/widget.test.tsx
+ create mode 100644 packages/app/src/plugins/floating-widgets/widget.tsx
+ create mode 100644 packages/app/src/styles/sidebar-geometry.ts
+ create mode 100644 packages/app/src/workspace-status/activities.test.ts
+ create mode 100644 packages/app/src/workspace-status/activities.ts
+ create mode 100644 packages/app/src/workspace-status/renderer-model.test.ts
+ create mode 100644 packages/app/src/workspace-status/renderer-model.ts
+ create mode 100644 packages/app/src/workspace-status/renderer.test.tsx
+ create mode 100644 packages/app/src/workspace-status/renderer.tsx
+ create mode 100644 packages/plugin/src/client/floating-widgets.ts
+ create mode 100644 packages/plugin/src/client/provider-icons.ts
+ create mode 100644 packages/plugin/src/client/workspace-status.ts
+ create mode 100644 packages/plugin/src/server/workspace-activity.ts
+ create mode 100644 packages/protocol/src/workspace-activity.ts
+ create mode 100644 packages/server/src/server/plugins/worker-workspace-activities.ts
+ create mode 100644 packages/server/src/server/plugins/workspace-activities.test.ts
+ create mode 100644 packages/server/src/server/plugins/workspace-activities.ts

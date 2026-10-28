@@ -1,0 +1,9 @@
+
+ RUN  v4.1.7 <checkout>/packages/plugin
+
+
+ Test Files  1 passed (1)
+      Tests  69 passed (69)
+   Start at  10:46:42
+   Duration  2.47s (transform 92ms, setup 0ms, import 229ms, tests 2.17s, environment 0ms)
+
