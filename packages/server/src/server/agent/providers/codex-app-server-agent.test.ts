@@ -533,7 +533,18 @@ function createReopenableCodexAgent(threads: Record<string, unknown[]>) {
     appServers.push(appServer);
     return appServer.child;
   };
-  const manager = new AgentManager({ clients: { codex: provider }, logger: createTestLogger() });
+  // The fake app-server stands in for the Codex CLI, which test machines may not have.
+  const client: AgentClient = {
+    provider: "codex",
+    capabilities: provider.capabilities,
+    isAvailable: async () => true,
+    fetchCatalog: async () => ({ models: [], modes: [] }),
+    createSession: async () => {
+      throw new Error("Unexpected create");
+    },
+    resumeSession: (...args) => provider.resumeSession(...args),
+  };
+  const manager = new AgentManager({ clients: { codex: client }, logger: createTestLogger() });
   const agentId = "00000000-0000-4000-8000-000000000001";
   const handle = { provider: "codex", sessionId: "saved-thread" };
   const config = createConfig({ cwd: process.cwd() });
