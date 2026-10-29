@@ -991,7 +991,7 @@ export default function contribute(client: PluginClientContext) {
 
 `query.itemType` 是稳定的、粗粒度的选择器。请在 `transform` 中检查所选的条目，以识别特定的 Provider 或工具。返回 `undefined` 会保留原条目。返回 `items` 会替换它；空数组会移除它。条目的 `data` 必须兼容 JSON。对于实时的助手消息、运行中的工具调用和加载中的推理，`phase` 输入为 `"streaming"`；对于已提交或已获取的消息以及已完成的工具或推理，它为 `"complete"`。助手和推理回调在每次更新时都会收到完整的累计文本，包括段落分隔符。Paseo 会在拆分原生 Markdown 或在 Overview 中对工具分组之前调用转换器。被认领的助手消息在整个流式过程中始终是同一个来源条目；如果最初的文本不足以识别它，请在可以识别之前返回 `undefined`。每个替换项都可以设置一个可选的、插件内部的 `id`；否则 Paseo 使用它在该来源条目输出中的索引。
 
-渲染器接收 `agentId`、`item`、`timestamp`、`theme`、`host` 和 `layout`。Paseo 在渲染之前用注册的 schema 校验 `item.data`。请让转换器保持同步且确定。Paseo 按来源条目的引用缓存结果，并从来源行推导替换项的标识，因此对某个流式条目的更新不会重新挂载它的渲染器。要让纯文本像 Paseo 的助手行那样逐步显示，请渲染 `@getpaseo/plugin/client/ui` 中的 `<StreamedText text={item.data.text} phase={item.data.phase} />`。它接受 React Native `Text` 的属性（包括 `style`），默认使用助手消息的字体排版和前景色。完成后会立即显示全文；流式输出期间由宿主控制显示节奏。需要 Paseo 0.13 或更高版本。
+渲染器接收 `agentId`、`item`、`timestamp`、`theme`、`host`、`layout`，以及可选的 `navigation`。导航默认使用该时间线所属的主机；可以通过 `await navigation?.openFile?.({ workspaceId, path })` 直接打开工作产物，能力不存在时隐藏相关操作。Paseo 在渲染之前用注册的 schema 校验 `item.data`。请让转换器保持同步且确定。Paseo 按来源条目的引用缓存结果，并从来源行推导替换项的标识，因此对某个流式条目的更新不会重新挂载它的渲染器。要让纯文本像 Paseo 的助手行那样逐步显示，请渲染 `@getpaseo/plugin/client/ui` 中的 `<StreamedText text={item.data.text} phase={item.data.phase} />`。它接受 React Native `Text` 的属性（包括 `style`），默认使用助手消息的字体排版和前景色。完成后会立即显示全文；流式输出期间由宿主控制显示节奏。需要 Paseo 0.13 或更高版本。
 
 当查询同时匹配原始消息时，聊天查找（Ctrl 或 Cmd+F）会在替换行中查找并高亮文本。宿主会在原始提示词文本或去掉 Markdown 语法的助手回复中搜索，然后由应用在你的渲染器绘制的文本中统计匹配。只由你的渲染器添加的文本不会被单独索引。匹配不会跨越渲染出的块，查找会跳过按钮、图标以及任何带有 `aria-hidden="true"` 的内容。查找只在 Web 和桌面应用中可用。
 

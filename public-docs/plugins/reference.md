@@ -1184,8 +1184,10 @@ return `undefined` until recognizable if the first text is insufficient to ident
 Each replacement may set an optional plugin-local `id`; otherwise Paseo uses its index within that
 source item's output.
 
-Renderers receive `agentId`, `item`, `timestamp`, `theme`, `host`, and `layout`. Paseo validates
-`item.data` with the registered schema before rendering. Keep transformers synchronous and
+Renderers receive `agentId`, `item`, `timestamp`, `theme`, `host`, `layout`, and optional
+`navigation`, scoped to the timeline's host. Use `await navigation?.openFile?.({ workspaceId, path })`
+to open a workspace artifact directly; hide dependent actions when the capability is absent.
+Paseo validates `item.data` with the registered schema before rendering. Keep transformers synchronous and
 deterministic. Paseo memoizes results by source-item reference and derives replacement identity from
 the source row, so updates to one streaming item do not remount its renderer. Render `<StreamedText text={item.data.text} phase={item.data.phase} />` from
 `@getpaseo/plugin/client/ui` for plain text paced like Paseo's assistant rows. It accepts React Native

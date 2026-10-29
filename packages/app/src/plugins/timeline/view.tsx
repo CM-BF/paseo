@@ -14,6 +14,7 @@ import { PluginInstallationProvider } from "../installation-provider";
 import { SurfaceErrorBoundary } from "../surface-error-boundary";
 import { toPluginTheme } from "../theme";
 import { resolvePluginPlatform } from "../platform";
+import { usePluginHostNavigation } from "../host-navigation";
 
 const pluginThemeMapping = (theme: Theme) => ({ theme: toPluginTheme(theme) });
 
@@ -60,6 +61,7 @@ function PluginTimelineItemBody({
   const host = useMemo(() => ({ id: serverId, label: hostLabel }), [hostLabel, serverId]);
   const layout = useMemo(() => ({ compact, platform: resolvePluginPlatform() }), [compact]);
   const stateSource = useMemo(() => createPluginClientStateSource(serverId), [serverId]);
+  const navigation = usePluginHostNavigation(serverId);
 
   if (!plugin || !renderer || !parsed || !client) {
     return <TimelineItemUnavailable />;
@@ -71,6 +73,7 @@ function PluginTimelineItemBody({
     theme,
     host,
     layout,
+    navigation,
     timestamp: item.timestamp,
     item: {
       type: "plugin",

@@ -281,7 +281,7 @@ export type PluginTimelineTransformerContribution<
     }
   : never;
 
-export interface PluginTimelineItemProps<Data = unknown> extends PluginHostProps {
+export interface PluginTimelineItemProps<Data = unknown> extends PluginNavigableHostProps {
   agentId: string;
   item: {
     type: "plugin";

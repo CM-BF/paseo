@@ -9,6 +9,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const hostClient = vi.hoisted(() => ({ invokePluginRpc: async () => null }));
 const selectedHost = vi.hoisted(() => ({ client: null as DaemonClient | null }));
+const fileNavigation = vi.hoisted(() => vi.fn());
+vi.mock("../host-navigation", () => ({
+  usePluginHostNavigation: (serverId: string) => ({
+    openAgent: vi.fn(),
+    openWorkspace: vi.fn(),
+    openFile: async (input: { workspaceId: string; path: string }) =>
+      fileNavigation({ serverId, ...input }),
+  }),
+}));
 vi.mock("@/runtime/host-runtime", () => ({
   useHostRuntimeClient: () => selectedHost.client ?? (hostClient as unknown as DaemonClient),
   useHosts: () => [{ serverId: "host-1", label: "Local" }],
@@ -105,6 +114,7 @@ const containers: HTMLElement[] = [];
 const daemonClient = {} as DaemonClient;
 
 beforeEach(() => {
+  fileNavigation.mockReset();
   vi.stubGlobal("React", React);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 });
@@ -112,12 +122,59 @@ afterEach(() => {
   for (const root of roots.splice(0)) act(() => root.unmount());
   for (const container of containers.splice(0)) container.remove();
   pluginRegistry.removeHost("host-1");
+  pluginRegistry.removeHost("host-2");
   selectedHost.client = null;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
 describe("PluginTimelineItemView", () => {
+  it("passes host-scoped file navigation to timeline renderers without opening another screen", async () => {
+    const navigationBundle = `(function(require) {
+      const React = require("react");
+      return { default: function(plugin) {
+        plugin.addTimelineRenderer({
+          kind: "test-report", version: 1,
+          schema: { safeParse(value) { return { success: true, data: value }; } },
+          Component: function Card(props) {
+            return React.createElement("button", {
+              onClick: async () => { await props.navigation.openFile({ workspaceId: "work", path: "result.md" }); },
+            }, props.host.id);
+          },
+        });
+        return function() {};
+      } };
+    })`;
+    for (const serverId of ["host-1", "host-2"]) {
+      pluginRegistry.installCatalog(
+        serverId,
+        [
+          {
+            id: "reports",
+            requirements: { paseo: `>=${appPackage.version}` },
+            clientBundle: navigationBundle,
+          },
+        ],
+        { client: daemonClient, audio },
+      );
+      const container = document.createElement("div");
+      containers.push(container);
+      const root = createRoot(container);
+      roots.push(root);
+      await act(async () =>
+        root.render(
+          <PluginTimelineItemView serverId={serverId} agentId="agent-1" item={timelineItem} />,
+        ),
+      );
+      expect(container.textContent).toBe(serverId);
+      await act(async () => container.querySelector("button")!.click());
+    }
+    expect(fileNavigation.mock.calls).toEqual([
+      [{ serverId: "host-1", workspaceId: "work", path: "result.md" }],
+      [{ serverId: "host-2", workspaceId: "work", path: "result.md" }],
+    ]);
+  });
+
   it("validates and renders the matching plugin component", async () => {
     pluginRegistry.installCatalog(
       "host-1",
