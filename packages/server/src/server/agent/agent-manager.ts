@@ -1393,6 +1393,7 @@ export class AgentManager {
     const resolvedAgentId = validateAgentId(agentId ?? this.idFactory(), "createAgent");
     if (this.pluginLifecycle && !config.internal) {
       const request = await this.pluginLifecycle.before("agent.create.before", {
+        agentId: resolvedAgentId,
         config,
         env: options.env,
       });

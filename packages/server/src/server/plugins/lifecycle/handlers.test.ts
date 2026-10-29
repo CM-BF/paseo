@@ -7,6 +7,50 @@ const paseo = createPaseoApi(
   new DaemonClient({ url: "ws://127.0.0.1:1/ws", clientId: "lifecycle-unit" }),
 );
 
+test("creation hooks keep the host identity through legacy results and later registrations", async () => {
+  const hooks = new PluginHookHandlers(() => {});
+  const seen: Array<string | undefined> = [];
+  hooks.before("agent.create", ({ request }) => {
+    seen.push(request.agentId);
+    if (!request.agentId) throw new Error("Host identity is missing");
+    return { config: request.config, env: { SCOPE_AGENT: request.agentId } };
+  });
+  hooks.addHook("agent.create.before", async ({ request }) => {
+    seen.push(request.agentId);
+    return request;
+  });
+  const config = { provider: "codex", cwd: "/project" };
+  expect(
+    await hooks.invoke("creation", "agent.create.before", { agentId: "allocated", config }, paseo),
+  ).toEqual({
+    agentId: "allocated",
+    config,
+    env: { SCOPE_AGENT: "allocated" },
+  });
+  expect(seen).toEqual(["allocated", "allocated"]);
+});
+
+test("creation hooks reject a changed agent identity before another handler runs", async () => {
+  const hooks = new PluginHookHandlers(() => {});
+  const later: string[] = [];
+  hooks.addHook("agent.create.before", async ({ request }) => ({ ...request, agentId: "other" }));
+  hooks.addHook("agent.create.before", async () => {
+    later.push("ran");
+  });
+  await expect(
+    hooks.invoke(
+      "creation",
+      "agent.create.before",
+      {
+        agentId: "allocated",
+        config: { provider: "codex", cwd: "/project" },
+      },
+      paseo,
+    ),
+  ).rejects.toThrow("cannot change the agent identity");
+  expect(later).toEqual([]);
+});
+
 test("removing an old registration twice preserves a newer registration for the same hook", async () => {
   const hooks = new PluginHookHandlers(() => {});
   const remove = hooks.addHook("workspace.create.before", async ({ request }) => {

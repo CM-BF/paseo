@@ -246,7 +246,7 @@ test("agent creation hooks change the provider and environment before the sessio
     acknowledgeClose: true,
     hooks: `
   server.addHook("agent.create.before", async ({ request }) => {
-    return { ...request, config: { ...request.config, provider: "${PROVIDER_ID}", model: "shutdown-model" }, env: { ...request.env, HOOK_CREATE: "created" } };
+    return { config: { ...request.config, provider: "${PROVIDER_ID}", model: "shutdown-model" }, env: { ...request.env, HOOK_CREATE: "created", HOOK_AGENT_ID: request.agentId } };
   });
   server.addHook("agent.open.before", async ({ request }) => {
     console.log(JSON.stringify({ hook: "agent.open.before", request }));
@@ -288,11 +288,11 @@ test("agent creation hooks change the provider and environment before the sessio
       .toMatchObject([
         {
           hook: "agent.open.before",
-          request: { agentId: agent.id, env: { HOOK_CREATE: "created" } },
+          request: { agentId: agent.id, env: { HOOK_CREATE: "created", HOOK_AGENT_ID: agent.id } },
         },
         {
           hook: "provider.open",
-          config: { env: { HOOK_CREATE: "created", HOOK_OPEN: "opened" } },
+          config: { env: { HOOK_CREATE: "created", HOOK_OPEN: "opened", HOOK_AGENT_ID: agent.id } },
         },
         {
           hook: "agent.create.after",

@@ -116,7 +116,12 @@ export interface PluginHookEvents {
 
 export interface PluginHookRequests {
   "worktree.create.before": PluginWorktreeCreateRequest;
-  "agent.create.before": { config: AgentSessionConfig; env?: Record<string, string> };
+  "agent.create.before": {
+    /** Allocated by the host before creation; absent on older hosts. Cannot be changed. */
+    readonly agentId?: string;
+    config: AgentSessionConfig;
+    env?: Record<string, string>;
+  };
   "agent.open.before": PluginSessionOpenRequest;
   "workspace.create.before": Omit<WorkspaceCreateRequest, "type" | "requestId">;
 }

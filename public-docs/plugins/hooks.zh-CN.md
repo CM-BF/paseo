@@ -47,22 +47,22 @@ Paseo 只观察返回的 Promise，因此独立任务没有错误报告，也没
 
 ## 钩子一览 {#hooks}
 
-| 钩子                      | 等待 | 载荷                                   | 可修改                                    |
-| ------------------------- | ---- | -------------------------------------- | ----------------------------------------- |
-| `workspace.create.before` | 是   | `{ request }`                          | 整个创建请求                              |
-| `workspace.create.after`  | 否   | `{ workspace }`                        |                                           |
-| `workspace.archive.after` | 否   | `{ workspace }`                        |                                           |
-| `worktree.create.before`  | 是   | `{ request }`                          | 创建选项和目标路径                        |
-| `worktree.create.after`   | 是   | `{ worktree }`                         | worktree 中的文件；抛出错误中止创建       |
-| `agent.create.before`     | 是   | `{ request: { config, env? } }`        | 除 `cwd` 外的已保存配置；`env`            |
-| `agent.create.after`      | 否   | `{ agent }`                            |                                           |
-| `agent.open.before`       | 是   | `{ request }`                          | 仅用于启动的 `env`、`tools`、`mcpServers` |
-| `agent.close.after`       | 否   | `{ agent }`                            |                                           |
-| `agent.archive.after`     | 否   | `{ agent, archivedAt }`                |                                           |
-| `agent.turn.before`       | 否   | `{ agent, turnId }`                    |                                           |
-| `agent.turn.after`        | 否   | `{ agent, turnId, outcome, timeline }` |                                           |
-| `agent.permission.before` | 否   | `{ agent, request }`                   |                                           |
-| `agent.permission.after`  | 否   | `{ agent, requestId, resolution }`     |                                           |
+| 钩子                      | 等待 | 载荷                                      | 可修改                                    |
+| ------------------------- | ---- | ----------------------------------------- | ----------------------------------------- |
+| `workspace.create.before` | 是   | `{ request }`                             | 整个创建请求                              |
+| `workspace.create.after`  | 否   | `{ workspace }`                           |                                           |
+| `workspace.archive.after` | 否   | `{ workspace }`                           |                                           |
+| `worktree.create.before`  | 是   | `{ request }`                             | 创建选项和目标路径                        |
+| `worktree.create.after`   | 是   | `{ worktree }`                            | worktree 中的文件；抛出错误中止创建       |
+| `agent.create.before`     | 是   | `{ request: { agentId?, config, env? } }` | 除 `cwd` 外的已保存配置；`env`            |
+| `agent.create.after`      | 否   | `{ agent }`                               |                                           |
+| `agent.open.before`       | 是   | `{ request }`                             | 仅用于启动的 `env`、`tools`、`mcpServers` |
+| `agent.close.after`       | 否   | `{ agent }`                               |                                           |
+| `agent.archive.after`     | 否   | `{ agent, archivedAt }`                   |                                           |
+| `agent.turn.before`       | 否   | `{ agent, turnId }`                       |                                           |
+| `agent.turn.after`        | 否   | `{ agent, turnId, outcome, timeline }`    |                                           |
+| `agent.permission.before` | 否   | `{ agent, request }`                      |                                           |
+| `agent.permission.after`  | 否   | `{ agent, requestId, resolution }`        |                                           |
 
 ## 共享载荷 {#shared-payloads}
 
@@ -199,7 +199,9 @@ server.addHook("worktree.create.after", async ({ worktree }) => {
 
 ## agent.create.before {#agentcreatebefore}
 
-收到 `{ request: { config, env? } }`。配置修改会保存，即使插件以后被停用或移除；`env` 只用于首次启动，不会保存。不能修改 `config.cwd`。抛出错误、无效返回或超时会让创建失败。
+收到 `{ request: { agentId?, config, env? } }`。配置修改会保存，即使插件以后被停用或移除；`env` 只用于首次启动，不会保存。不能修改 `config.cwd` 或 `agentId`。抛出错误、无效返回或超时会让创建失败。
+
+`agentId` 是宿主预先分配的身份；包括定时任务在内，创建成功后都会使用这个 ID。旧宿主没有此字段；生成会话专属凭证或绑定前，先确认它存在。只返回 `{ config, env }` 会保留原 ID，返回不同 ID 会让创建失败。收到此字段不表示 Agent 已注册成功。
 
 **`agent.create.before.config`** 使用 `AgentSessionConfig`：
 

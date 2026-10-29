@@ -91,7 +91,9 @@ const beforeSchemas = {
   "agent.create.before": CreateAgentRequestMessageSchema.pick({
     config: true,
     env: true,
-  }).strict(),
+  })
+    .extend({ agentId: z.string().min(1).optional() })
+    .strict(),
   "agent.open.before": z
     .object({
       agentId: z.string(),
@@ -240,6 +242,12 @@ export async function validateBeforeResult<Name extends keyof PluginWireBeforeRe
     if (previous.config.cwd !== next.config.cwd) {
       throw new Error("agent.create.before hooks cannot change the workspace directory");
     }
+    if (next.agentId !== undefined && next.agentId !== previous.agentId) {
+      throw new Error("agent.create.before hooks cannot change the agent identity");
+    }
+    // COMPAT(createHookAgentId): added in v0.14.0, remove after 2027-04-29
+    // Existing hooks return only config/env. The allocated identity still belongs to the host.
+    if (previous.agentId !== undefined) Object.assign(result, { agentId: previous.agentId });
   }
   if (name === "worktree.create.before") {
     const previous = beforeSchemas["worktree.create.before"].parse(input);

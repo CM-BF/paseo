@@ -49,22 +49,22 @@ Paseo only sees the returned promise, so detached work gets no error reporting a
 
 ## Hooks
 
-| Hook                      | Waits | Payload                                | Handler may change                             |
-| ------------------------- | ----- | -------------------------------------- | ---------------------------------------------- |
-| `workspace.create.before` | yes   | `{ request }`                          | Entire create request                          |
-| `workspace.create.after`  | no    | `{ workspace }`                        |                                                |
-| `workspace.archive.after` | no    | `{ workspace }`                        |                                                |
-| `worktree.create.before`  | yes   | `{ request }`                          | Creation options and destination               |
-| `worktree.create.after`   | yes   | `{ worktree }`                         | Files in the worktree; throw to abort creation |
-| `agent.create.before`     | yes   | `{ request: { config, env? } }`        | Saved config except `cwd`; `env`               |
-| `agent.create.after`      | no    | `{ agent }`                            |                                                |
-| `agent.open.before`       | yes   | `{ request }`                          | Launch-only `env`, `tools`, `mcpServers`       |
-| `agent.close.after`       | no    | `{ agent }`                            |                                                |
-| `agent.archive.after`     | no    | `{ agent, archivedAt }`                |                                                |
-| `agent.turn.before`       | no    | `{ agent, turnId }`                    |                                                |
-| `agent.turn.after`        | no    | `{ agent, turnId, outcome, timeline }` |                                                |
-| `agent.permission.before` | no    | `{ agent, request }`                   |                                                |
-| `agent.permission.after`  | no    | `{ agent, requestId, resolution }`     |                                                |
+| Hook                      | Waits | Payload                                   | Handler may change                             |
+| ------------------------- | ----- | ----------------------------------------- | ---------------------------------------------- |
+| `workspace.create.before` | yes   | `{ request }`                             | Entire create request                          |
+| `workspace.create.after`  | no    | `{ workspace }`                           |                                                |
+| `workspace.archive.after` | no    | `{ workspace }`                           |                                                |
+| `worktree.create.before`  | yes   | `{ request }`                             | Creation options and destination               |
+| `worktree.create.after`   | yes   | `{ worktree }`                            | Files in the worktree; throw to abort creation |
+| `agent.create.before`     | yes   | `{ request: { agentId?, config, env? } }` | Saved config except `cwd`; `env`               |
+| `agent.create.after`      | no    | `{ agent }`                               |                                                |
+| `agent.open.before`       | yes   | `{ request }`                             | Launch-only `env`, `tools`, `mcpServers`       |
+| `agent.close.after`       | no    | `{ agent }`                               |                                                |
+| `agent.archive.after`     | no    | `{ agent, archivedAt }`                   |                                                |
+| `agent.turn.before`       | no    | `{ agent, turnId }`                       |                                                |
+| `agent.turn.after`        | no    | `{ agent, turnId, outcome, timeline }`    |                                                |
+| `agent.permission.before` | no    | `{ agent, request }`                      |                                                |
+| `agent.permission.after`  | no    | `{ agent, requestId, resolution }`        |                                                |
 
 ## Shared payloads
 
@@ -202,7 +202,9 @@ server.addHook("worktree.create.after", async ({ worktree }) => {
 
 ## agent.create.before
 
-Receives `{ request: { config, env? } }`. Config changes are saved and remain after the plugin is disabled or removed; `env` applies to the initial launch and is not saved. You cannot change `config.cwd`. A throw, invalid result, or timeout fails creation.
+Receives `{ request: { agentId?, config, env? } }`. Config changes are saved and remain after the plugin is disabled or removed; `env` applies to the initial launch and is not saved. You cannot change `config.cwd` or `agentId`. A throw, invalid result, or timeout fails creation.
+
+`agentId` is the host-allocated identity that will be used if creation succeeds, including scheduled agents. It is absent on older hosts; check its presence before creating session-scoped credentials or bindings. Returning only `{ config, env }` preserves the identity, and returning a different ID fails creation. The field does not mean the agent has been registered yet.
 
 **`agent.create.before.config`** uses `AgentSessionConfig`:
 

@@ -8442,6 +8442,36 @@ test("listAgents excludes internal agents", async () => {
   ]);
 });
 
+test.each([undefined, "00000000-0000-4000-8000-000000000119"])(
+  "creation hooks receive the resolved identity before opening caller id %s",
+  async (requestedId) => {
+    const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+    const generatedId = "00000000-0000-4000-8000-000000000118";
+    const received: unknown[] = [];
+    const manager = new AgentManager({
+      clients: { codex: new TestAgentClient() },
+      registry: new AgentStorage(join(workdir, "agents"), logger),
+      logger,
+      idFactory: () => generatedId,
+      pluginLifecycle: {
+        emit: () => {},
+        before: async (name, request) => {
+          if (name === "agent.create.before") received.push(request);
+          return request;
+        },
+      },
+    });
+    const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, requestedId, {
+      workspaceId: undefined,
+    });
+    expect(agent.id).toBe(requestedId ?? generatedId);
+    expect(received).toEqual([
+      { agentId: agent.id, config: { provider: "codex", cwd: workdir }, env: undefined },
+    ]);
+    await manager.closeAgent(agent.id);
+  },
+);
+
 test("workspace ownership does not turn an ordinary agent into a disposable helper", async () => {
   const agentId = "00000000-0000-4000-8000-000000000115";
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));

@@ -683,10 +683,19 @@ describe("ScheduleService", () => {
   });
 
   test("executes new-agent schedules through AgentManager with real fake clients", async () => {
+    const creationIdentities: unknown[] = [];
     const manager = new AgentManager({
       logger: createTestLogger(),
       clients: createTestAgentClients(),
       registry: agentStorage,
+      pluginLifecycle: {
+        emit: () => {},
+        before: async (name, request) => {
+          if (name === "agent.create.before" && "agentId" in request)
+            creationIdentities.push(request.agentId);
+          return request;
+        },
+      },
     });
     const service = createScheduleService({
       paseoHome: tempDir,
@@ -720,6 +729,7 @@ describe("ScheduleService", () => {
     expect(inspected.runs[0]?.agentId).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     );
+    expect(creationIdentities).toEqual([inspected.runs[0]!.agentId]);
   });
 
   test("delivers agent-target schedules through the steer-or-interrupt path", async () => {
