@@ -58,6 +58,8 @@ export interface StreamViewportHandle {
   prepareForViewportChange: () => void;
   /** Stop following output so the rows on screen stay put while rows below them open or close. */
   holdReadingPosition: () => void;
+  /** Resolves only after a matching native row is mounted and scrolled into view. */
+  locateMessage?: (messageId: string, signal: AbortSignal) => Promise<boolean>;
   scrollToMessage?: (messageId: string, occurrence?: ScrollToMessageOccurrence) => void;
 }
 

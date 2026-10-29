@@ -2587,3 +2587,38 @@ Use `paseo plugin ls` to read the current status and error.
 | Edited code does not appear                                           | Run `npm run typecheck`, then `paseo plugin reload <id>`.                                                                                          |
 | Reload fails                                                          | Read `paseo plugin ls` and `paseo plugin logs <id>`, fix the source error, then reload; Paseo does not restore the previous bundle.                |
 | Plugin exits unexpectedly                                             | Read `paseo plugin logs <id>` for retained initialization, cleanup, stderr, and final crash output.                                                |
+
+## Native message actions and footers
+
+`client.addMessageAction({ id, Component })` and `client.addMessageFooter({ id, Component })`
+add content beside a native message's actions or below its content. Each returns an idempotent
+cleanup function. Feature-detect these methods on older clients. Native bubbles, Markdown,
+attachments, tools and built-in actions remain owned by Paseo. Failing contributions are isolated.
+User actions share the native hover/touch action row; assistant actions appear below each completed
+message. Footers remain visible. A transformer that replaces the native message owns its replacement;
+these slots are not mounted inside it.
+
+Components receive `PluginMessageProps`: `theme`, `host`, `layout`, optional `navigation`, `agentId`,
+and `message: { reference, text, position }`. `reference` contains `role`, optional `turnId`, and at
+least one real `providerMessageId` or `clientMessageId`. These are distinct namespaces; neither is
+an app render-row ID. Preserve the full reference with its host and agent. These objects are read-only.
+Uncommitted local messages, streaming assistant messages and historical messages without a native/client
+identity have no slots. Text is display content, not an identifier or authorization proof; resolve
+authoritative source content on the server before acting on it.
+
+`await navigation.locateMessage?.({ agentId, reference, position?, serverId? })` opens that native
+conversation and attempts exact location. The host defaults to the rendering plugin's host. `position`
+(`{ epoch, seq }`) is only a search hint: role, IDs and any supplied turn ID are checked before scrolling.
+Lookup searches at most eight pages of 200 projected entries, including an optional hint page, and
+expands collapsed turns and the local history window as needed. Results:
+
+- `found`: identity matched and the web viewport confirmed a mounted, visible row, which is briefly highlighted.
+- `not-found`: scanning reached the beginning without a match.
+- `limit`: older history remains beyond the search budget.
+- `unavailable`: unsupported viewport, connection/view changed, loading failed or lookup timed out.
+
+The current iOS/Android viewport returns `unavailable`; opening a conversation is not a successful
+location. Stale source callbacks cannot initiate navigation after unmount or host changes. Once accepted,
+navigation may close its source surface while the target loads. Reconnects and target unmounts invalidate
+outstanding results. Locating sends no message and changes no permission state. Composer quote metadata
+and embedded conversations are separate capabilities.

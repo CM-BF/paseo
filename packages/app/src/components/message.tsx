@@ -1,3 +1,5 @@
+import type { PluginMessageProps } from "@getpaseo/plugin/client";
+import { usePluginMessageAdornments } from "@/plugins/message-items";
 import { MessagePreview, MessageSender } from "@/components/user-message";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { getAgentAttachmentPillContent } from "@/attachments/attachment-pill-content";
@@ -91,6 +93,7 @@ export type { InlinePathTarget } from "@/assistant-file-links";
 export type { AssistantForkTarget };
 
 interface UserMessageProps {
+  sourceMessage?: PluginMessageProps["message"];
   sender?: AgentMessage["sender"];
   serverId?: string;
   agentId?: string;
@@ -390,6 +393,7 @@ function UserMessageImagePill({ image, onOpen, accessibilityLabel }: UserMessage
 const MESSAGE_TEXT_DATASET = { messageText: "true" };
 
 export const UserMessage = memo(function UserMessage({
+  sourceMessage,
   sender,
   serverId,
   agentId,
@@ -405,6 +409,11 @@ export const UserMessage = memo(function UserMessage({
   isPending = false,
   disableOuterSpacing,
 }: UserMessageProps) {
+  const { actions: messageActions, footer: messageFooter } = usePluginMessageAdornments(
+    serverId,
+    agentId,
+    sourceMessage,
+  );
   const isCompact = useIsCompactFormFactor();
   const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
@@ -419,6 +428,16 @@ export const UserMessage = memo(function UserMessage({
   const hasImages = images.length > 0;
   const hasAttachments = attachments.length > 0;
   const showTrailingRow = !isPending && hasText && (isCompact || isNative || isHovered);
+  const footer = useMemo(
+    () =>
+      isPending ? null : (
+        <>
+          {!hasText ? messageActions : null}
+          {messageFooter}
+        </>
+      ),
+    [hasText, isPending, messageActions, messageFooter],
+  );
   const formattedTimestamp = useMemo(
     () => formatMessageTimestamp(new Date(timestamp)),
     [timestamp],
@@ -534,6 +553,7 @@ export const UserMessage = memo(function UserMessage({
                 onRewind={handleRewind}
               />
             ) : null}
+            {messageActions}
             <TurnCopyButton
               getContent={getMessageContent}
               containerStyle={userMessageStylesheet.copyButton}
@@ -541,6 +561,7 @@ export const UserMessage = memo(function UserMessage({
             />
           </View>
         ) : null}
+        {footer}
       </View>
       <AttachmentLightbox source={lightboxSource} onClose={handleLightboxClose} />
     </View>
@@ -719,6 +740,8 @@ export const LiveElapsed = memo(function LiveElapsed({
 });
 
 interface AssistantMessageProps {
+  agentId?: string;
+  sourceMessage?: PluginMessageProps["message"];
   renderFullContent?: boolean;
   occurrenceKey: string;
   message: string;
@@ -1142,6 +1165,8 @@ function NativeShimmerPeakSvg({ gradientId }: { gradientId: string }) {
 }
 
 export const AssistantMessage = memo(function AssistantMessage({
+  agentId,
+  sourceMessage,
   renderFullContent = false,
   occurrenceKey,
   message,
@@ -1152,6 +1177,11 @@ export const AssistantMessage = memo(function AssistantMessage({
   spacing = "default",
   phase,
 }: AssistantMessageProps) {
+  const { actions: messageActions, footer: messageFooter } = usePluginMessageAdornments(
+    serverId,
+    agentId,
+    sourceMessage,
+  );
   const { t } = useTranslation();
   const renderedMessage = useMemo(
     () =>
@@ -1212,6 +1242,8 @@ export const AssistantMessage = memo(function AssistantMessage({
           {t("agentStream.messageCapped", { bytes: fullMessageByteLength })}
         </Text>
       ) : null}
+      {messageActions}
+      {messageFooter}
     </View>
   );
 });

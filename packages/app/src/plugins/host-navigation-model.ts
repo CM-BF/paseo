@@ -1,4 +1,8 @@
-import type { PluginSurfaceProps } from "@getpaseo/plugin/client";
+import type {
+  PluginSurfaceProps,
+  PluginLocateMessageInput,
+  PluginLocateMessageResult,
+} from "@getpaseo/plugin/client";
 import type { NavigateToWorkspaceInput } from "@/stores/navigation-active-workspace-store";
 import { isHttpUrl } from "@/utils/http-url";
 import { resolveWorkspaceFilePaths } from "@/workspace/file-open";
@@ -48,6 +52,7 @@ export function capturePluginFileWorkspace(input: {
 
 interface HostNavigationOwner {
   browserAvailable: boolean;
+  locateMessage?(input: PluginLocateMessageInput): Promise<PluginLocateMessageResult>;
   beforeNavigate?(): void;
   openAgent(input: { serverId: string; agentId: string }): void;
   openWorkspace(input: NavigateToWorkspaceInput): void;
@@ -61,6 +66,7 @@ export function createPluginHostNavigation(
   owner: HostNavigationOwner,
 ): NonNullable<PluginSurfaceProps["navigation"]> {
   return {
+    locateMessage: owner.locateMessage,
     openAgent: ({ agentId, serverId: targetServerId }) => {
       owner.beforeNavigate?.();
       owner.openAgent({ serverId: targetServerId ?? serverId, agentId });

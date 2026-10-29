@@ -10,6 +10,7 @@ import type {
 import type {
   PluginFilePanelContribution as SDKPluginFilePanelContribution,
   PluginAgentHeaderItemContribution,
+  PluginMessageContribution,
   PluginCommandCenterItemContribution as SDKPluginCommandCenterItemContribution,
   PluginClientSlashCommandContribution as SDKPluginClientSlashCommandContribution,
   PluginComposerPillContribution as SDKPluginComposerPillContribution,
@@ -50,6 +51,8 @@ export interface EvaluatedPlugin {
   surfaces: PluginScreenContribution[];
   settingsScreens: PluginSettingsScreenContribution[];
   agentHeaderItems: PluginAgentHeaderItemContribution[];
+  messageActions: PluginMessageContribution[];
+  messageFooters: PluginMessageContribution[];
   sidebarItems: Record<PluginSidebarSection, PluginSidebarItemContribution[]>;
   // COMPAT(pluginSidebarAliases): added in v0.11.0, remove after 2027-03-29
   /** `addSidebarItem` registrations, so `/plugin/<id>/sidebar/<item>` routes keep resolving. */

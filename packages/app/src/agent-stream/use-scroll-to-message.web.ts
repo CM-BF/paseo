@@ -149,7 +149,33 @@ export function useScrollToMessage({
     ],
   );
 
+  const locateMessage = useCallback(
+    async (messageId: string, signal: AbortSignal): Promise<boolean> => {
+      if (!active || signal.aborted) return false;
+      scrollToMessage(messageId);
+      // Virtualized rows mount after the scroll request. Do not report success before they exist.
+      for (let frame = 0; frame < 60; frame += 1) {
+        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+        if (signal.aborted) return false;
+        const container = scrollContainerRef.current;
+        if (!container) return false;
+        const target = container.querySelector<HTMLElement>(
+          `[data-message-id="${CSS.escape(messageId)}"]`,
+        );
+        if (!target) continue;
+        const bounds = target.getBoundingClientRect(),
+          viewport = container.getBoundingClientRect();
+        if (bounds.bottom <= viewport.top || bounds.top >= viewport.bottom) continue;
+        target.animate?.([{ opacity: 0.45 }, { opacity: 1 }], { duration: 700 });
+        return true;
+      }
+      return false;
+    },
+    [active, scrollToMessage, scrollContainerRef],
+  );
+
   return {
+    locateMessage,
     isJumpSettling: settleController.isActive,
     scrollToMessage,
   };

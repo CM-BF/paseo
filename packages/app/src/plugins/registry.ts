@@ -104,6 +104,8 @@ export class PluginRegistry {
           surfaces: [],
           settingsScreens: [],
           agentHeaderItems: [],
+          messageActions: [],
+          messageFooters: [],
           sidebarItems: { header: [], footer: [] },
           legacySidebarItems: [],
           filePanels: [],

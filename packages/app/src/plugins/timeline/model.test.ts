@@ -21,6 +21,8 @@ function plugin(input: {
     cleanup: () => {},
     settingsScreens: [],
     agentHeaderItems: [],
+    messageActions: [],
+    messageFooters: [],
     surfaces: [],
     sidebarItems: { header: [], footer: [] },
     legacySidebarItems: [],

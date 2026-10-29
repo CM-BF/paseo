@@ -718,7 +718,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     reportReadingPosition();
   }, [onNearBottomChange, reportReadingPosition]);
 
-  const { isJumpSettling, scrollToMessage } = useScrollToMessage({
+  const { isJumpSettling, scrollToMessage, locateMessage } = useScrollToMessage({
     active: isActive,
     scrollContainerRef,
     rowVirtualizer,
@@ -1188,6 +1188,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         readingAnchor.scroll(scrollContainerRef.current?.scrollTop ?? 0);
       },
       scrollToMessage,
+      locateMessage,
     };
     viewportRef.current = handle;
     return () => {
@@ -1202,6 +1203,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     readingAnchor,
     scheduleStickToBottom,
     scrollToMessage,
+    locateMessage,
     viewportRef,
   ]);
 

@@ -129,6 +129,8 @@ export function runPluginClientBundle(
     surfaces: [],
     settingsScreens: [],
     agentHeaderItems: [],
+    messageActions: [],
+    messageFooters: [],
     sidebarItems: { header: [], footer: [] },
     legacySidebarItems: [],
     filePanels: [],
@@ -142,6 +144,8 @@ export function runPluginClientBundle(
   };
   const surfaceIds = new Set<string>();
   const agentHeaderItemIds = new Set<string>();
+  const messageActionIds = new Set<string>();
+  const messageFooterIds = new Set<string>();
   const settingsScreenIds = new Set<string>();
   const sidebarItemIds: Record<PluginSidebarSection, Set<string>> = {
     header: new Set(),
@@ -276,6 +280,30 @@ export function runPluginClientBundle(
     },
     addSidebarFooterItem(contribution: PluginSidebarItemContribution) {
       return addSidebarItem("footer", contribution);
+    },
+    addMessageAction(contribution) {
+      const itemId = requireId(contribution.id, "message action id");
+      if (messageActionIds.has(itemId)) throw new Error(`Duplicate message action: ${itemId}`);
+      if (!isComponentType(contribution.Component))
+        throw new Error(`Message action ${itemId} is not a component`);
+      messageActionIds.add(itemId);
+      return register(
+        collector.messageActions,
+        { id: itemId, Component: contribution.Component },
+        () => messageActionIds.delete(itemId),
+      );
+    },
+    addMessageFooter(contribution) {
+      const itemId = requireId(contribution.id, "message footer id");
+      if (messageFooterIds.has(itemId)) throw new Error(`Duplicate message footer: ${itemId}`);
+      if (!isComponentType(contribution.Component))
+        throw new Error(`Message footer ${itemId} is not a component`);
+      messageFooterIds.add(itemId);
+      return register(
+        collector.messageFooters,
+        { id: itemId, Component: contribution.Component },
+        () => messageFooterIds.delete(itemId),
+      );
     },
     addAgentHeaderItem(contribution) {
       const itemId = requireId(contribution.id, "agent header item id");
@@ -597,6 +625,8 @@ export function runPluginClientBundle(
     surfaces: collector.surfaces,
     settingsScreens: collector.settingsScreens,
     agentHeaderItems: collector.agentHeaderItems,
+    messageActions: collector.messageActions,
+    messageFooters: collector.messageFooters,
     sidebarItems: collector.sidebarItems,
     legacySidebarItems: collector.legacySidebarItems,
     filePanels: collector.filePanels,

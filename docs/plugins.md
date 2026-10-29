@@ -780,3 +780,17 @@ Existing plugin authors should follow the standalone [v0.8 runtime-entry migrati
 See `plugin-examples/local-plugin` for a native surface, `plugin-examples/linear` for a complete
 attachment-source example, `plugin-examples/timeline-items` for timeline projection, and
 `plugin-examples/catppuccin` for a theme.
+
+## Native message adornments and location
+
+The registry owns `addMessageAction` / `addMessageFooter`. Native user and completed assistant
+renderers mount them without replacing their content. `plugins/message-identity.ts` selects persisted
+provider/client IDs only; synthetic row IDs and text hashes never become public references. Contributions
+remount across host, agent and source changes and are individually error-isolated. See the
+[public contract](../public-docs/plugins/reference.md#native-message-actions-and-footers).
+
+`plugins/message-location.ts` bounds exact history lookup and routes by host and agent.
+`agent-stream/use-plugin-message-location.ts` owns expansion and view lifetime; the web viewport
+confirms visibility before success. Native viewports report unavailable. Cursor hints cannot bypass
+identity checks. Source lifecycle validation before navigation is separate from target connection/view
+validation after an accepted navigation.

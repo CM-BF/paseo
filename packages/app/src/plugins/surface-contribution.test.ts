@@ -29,6 +29,8 @@ function installation(
     cleanup: () => undefined,
     settingsScreens: [],
     agentHeaderItems: [],
+    messageActions: [],
+    messageFooters: [],
     surfaces: surfaces.map((id) => ({ id, title: id, Component: () => null })),
     sidebarItems: { header: [], footer: [] },
     legacySidebarItems: sidebarItems.map((item) => ({

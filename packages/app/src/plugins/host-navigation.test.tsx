@@ -5,17 +5,20 @@ import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
+import { registerMessageLocator } from "./message-location";
 import { usePluginHostNavigation } from "./host-navigation";
 
 const host = vi.hoisted(() => ({
   workspaces: new Map<string, { id: string; workspaceDirectory: string }>(),
+  client: {},
+  generation: 1,
   refresh: vi.fn<(input: { serverId: string }) => Promise<void>>(),
 }));
 vi.mock("@/runtime/host-runtime", () => ({
   getHostRuntimeStore: () => ({
     getSnapshot: () => ({
-      client: null,
-      clientGeneration: 1,
+      client: host.client,
+      clientGeneration: host.generation,
       connectionEpoch: 1,
       connectionStatus: "online",
     }),
@@ -120,4 +123,46 @@ describe("usePluginHostNavigation", () => {
       expect(navigateToWorkspaceMock).not.toHaveBeenCalled();
     },
   );
+});
+
+it("rejects message callbacks from unmounted or previous-host surfaces", async () => {
+  const { result, rerender, unmount } = renderHook(
+    ({ serverId }) => usePluginHostNavigation(serverId),
+    { initialProps: { serverId: "host-1" } },
+  );
+  const first = result.current.locateMessage!;
+  const request = {
+    agentId: "agent",
+    reference: { role: "user" as const, clientMessageId: "client" },
+  };
+  rerender({ serverId: "host-2" });
+  expect(await first(request)).toEqual({ status: "unavailable" });
+  const second = result.current.locateMessage!;
+  unmount();
+  expect(await second(request)).toEqual({ status: "unavailable" });
+  expect(navigateToAgentMock).not.toHaveBeenCalled();
+});
+it("rejects a message location result from a replaced connection", async () => {
+  let finish!: (value: { status: "found" }) => void;
+  const remove = registerMessageLocator(
+    "host-1",
+    "agent",
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const { result, unmount } = renderHook(() => usePluginHostNavigation("host-1"));
+  let pending!: ReturnType<NonNullable<typeof result.current.locateMessage>>;
+  await act(async () => {
+    pending = result.current.locateMessage!({
+      agentId: "agent",
+      reference: { role: "user", clientMessageId: "id" },
+    });
+  });
+  host.generation++;
+  finish({ status: "found" });
+  expect(await pending).toEqual({ status: "unavailable" });
+  remove();
+  unmount();
 });

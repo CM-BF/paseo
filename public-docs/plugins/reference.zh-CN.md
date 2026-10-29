@@ -2252,3 +2252,31 @@ daemon 级别的 **启用插件** 开关位于 **设置 → 插件** 下。只�
 | 修改后的代码没有生效                                                  | 运行 `npm run typecheck`，然后运行 `paseo plugin reload <id>`。                                                                |
 | 重新加载失败                                                          | 读取 `paseo plugin ls` 和 `paseo plugin logs <id>`，修复源代码错误后再重新加载；Paseo 不会恢复之前的插件包。                   |
 | 插件意外退出                                                          | 读取 `paseo plugin logs <id>`，查看保留的初始化、清理、stderr 以及最终崩溃的输出。                                             |
+
+## 原生消息操作与页脚
+
+`client.addMessageAction({ id, Component })` 和 `client.addMessageFooter({ id, Component })`
+在原生消息操作旁、内容下方增加内容，返回幂等清理函数。旧客户端需检查方法是否存在。
+原生气泡、Markdown、附件、工具及内置操作仍由 Paseo 渲染，单个插件渲染失败不会影响其他内容。
+用户操作沿用原生悬停／触屏操作行，助手操作显示在每条已完成消息下方，页脚持续显示。
+时间线转换器替换的消息由替换组件自行渲染，不会挂载这些槽。
+
+组件接收 `PluginMessageProps`：`theme`、`host`、`layout`、可选 `navigation`、`agentId`，以及
+`message: { reference, text, position }`。`reference` 包含 `role`、可选 `turnId`，且至少有一个真实
+`providerMessageId` 或 `clientMessageId`。两者命名空间不同，都不是展示行 ID。持久化时保留完整
+引用及其主机、Agent。对象只读。未提交的本地消息、流式助手消息、没有真实标识的旧历史不提供这些槽。
+文字只是显示内容，不是身份或授权依据，执行操作前应在服务端核对真实来源。
+
+`await navigation.locateMessage?.({ agentId, reference, position?, serverId? })` 打开指定原生对话并
+尝试精确定位。主机默认为当前插件的主机。`position`（`{ epoch, seq }`）仅作检索提示，滚动前仍
+核对角色、消息标识及传入的轮次标识。最多检索八页，每页 200 条投影记录，提示页计入上限。
+必要时展开折叠轮次和本地历史窗口。结果：
+
+- `found`：身份匹配，Web 视口确认目标行已挂载且可见，并短暂高亮。
+- `not-found`：扫描到历史开头，未找到匹配消息。
+- `limit`：达到上限，仍有更早历史。
+- `unavailable`：视口不支持、连接或页面改变、加载失败或超时。
+
+目前 iOS／Android 视口返回 `unavailable`，不会把打开对话冒充定位成功。来源组件关闭或切换主机
+后，旧回调不能发起定位。已接受的导航可以关闭来源组件并继续等待目标；重连或目标卸载会使未完成
+结果失效。定位不会发消息或改变权限状态。输入框引用元数据及嵌入另一对话属于独立能力。

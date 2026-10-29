@@ -5,9 +5,10 @@ import { useLayoutEffect, useMemo } from "react";
 import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
 
-import { getIsElectron } from "@/constants/platform";
+import { getIsElectron, isWeb } from "@/constants/platform";
 import { createWorkspaceBrowser } from "@/desktop/browser/store";
 import { capturePluginFileWorkspace, createPluginHostNavigation } from "./host-navigation-model";
+import { requestMessageLocation } from "./message-location";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 
 function resolveWorkspace({ serverId, workspaceId }: { serverId: string; workspaceId: string }) {
@@ -34,6 +35,31 @@ export function usePluginHostNavigation(
       createPluginHostNavigation(serverId, {
         browserAvailable: getIsElectron(),
         beforeNavigate,
+        locateMessage: async (input) => {
+          if (!isWeb || !scope.active) return { status: "unavailable" };
+          const destinationServerId = input.serverId ?? serverId;
+          const runtime = getHostRuntimeStore();
+          const captured = runtime.getSnapshot(destinationServerId);
+          if (!captured?.client) return { status: "unavailable" };
+          // The accepted navigation can close its source surface; only subsequent calls are stale.
+          return requestMessageLocation({
+            serverId: destinationServerId,
+            request: input,
+            isCurrent: () => {
+              const current = runtime.getSnapshot(destinationServerId);
+              return (
+                !!current &&
+                captured.client === current.client &&
+                captured.clientGeneration === current.clientGeneration &&
+                captured.connectionEpoch === current.connectionEpoch
+              );
+            },
+            open: () => {
+              beforeNavigate?.();
+              navigateToAgent({ serverId: destinationServerId, agentId: input.agentId });
+            },
+          });
+        },
         openAgent: navigateToAgent,
         openWorkspace: navigateToWorkspace,
         createBrowser: createWorkspaceBrowser,

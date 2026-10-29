@@ -1,5 +1,11 @@
 export type {
   PluginHostProps,
+  PluginMessageReference,
+  PluginMessagePosition,
+  PluginLocateMessageInput,
+  PluginLocateMessageResult,
+  PluginMessageProps,
+  PluginMessageContribution,
   PluginAgentHeaderItemProps,
   PluginAgentHeaderItemContribution,
   PluginTab,

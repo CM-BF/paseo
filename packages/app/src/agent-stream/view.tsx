@@ -1,4 +1,6 @@
 import { ChatFind, ChatFindExpansion } from "@/agent-stream/chat-find";
+import { usePluginMessageLocation } from "./use-plugin-message-location";
+import { pluginMessageFor } from "@/plugins/message-identity";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import React, {
   forwardRef,
@@ -697,6 +699,16 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       }
       return revealLoadedHistory(messageId);
     });
+    usePluginMessageLocation({
+      serverId: resolvedServerId,
+      agentId,
+      active: isActive,
+      items: effectiveStreamItems,
+      head: effectiveStreamHead,
+      mounted: mountedMessageIds,
+      reveal: revealLoadedMessage,
+      viewport: viewportRef,
+    });
     // Read through stable events so a collapse rerun does not change the renderer identity;
     // rows whose turn state changed are revised through `historyRowRevision`.
     const getCollapsedTurn = useStableEvent((hostId: string) =>
@@ -716,11 +728,13 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const renderUserMessageItem = useCallback(
       (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "user_message" }>) => {
         const collapsedTurn = getCollapsedTurn(item.id);
+        const sourceMessage = pluginMessageFor(item);
         const message = (
           <UserMessage
             serverId={resolvedServerId}
             agentId={agentId}
             messageId={item.messageId}
+            sourceMessage={sourceMessage ?? undefined}
             message={item.text}
             sender={item.sender}
             images={item.images}
@@ -759,6 +773,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
 
     const renderAssistantMessageItem = useCallback(
       (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "assistant_message" }>) => {
+        const sourceMessage = layoutItem.phase === "complete" ? pluginMessageFor(item) : null;
         return (
           <AssistantFileLinkResolverProvider
             client={client}
@@ -771,6 +786,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               {(renderFullContent) => (
                 <AssistantMessage
                   renderFullContent={renderFullContent}
+                  agentId={agentId}
+                  sourceMessage={sourceMessage ?? undefined}
                   occurrenceKey={createAssistantImageOccurrenceKey({ agentId, itemId: item.id })}
                   message={item.text}
                   timestamp={item.timestamp.getTime()}

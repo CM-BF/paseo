@@ -30,6 +30,35 @@ function bundle(body: string): string {
 }
 
 describe("evaluatePluginClientBundle", () => {
+  it("validates message slots and removes registrations independently and on cleanup", async () => {
+    for (const method of ["addMessageAction", "addMessageFooter"]) {
+      expect(() =>
+        evaluatePluginClientBundle("bad", bundle(`plugin.${method}({id:"quote",Component:12});`)),
+      ).toThrow("not a component");
+      expect(() =>
+        evaluatePluginClientBundle(
+          "duplicate",
+          bundle(
+            `function Component(){return null} plugin.${method}({id:"quote",Component});plugin.${method}({id:"quote",Component});`,
+          ),
+        ),
+      ).toThrow("Duplicate message");
+    }
+    const plugin = evaluatePluginClientBundle(
+      "slots",
+      bundle(`
+      function Component(){return null}
+      const remove=plugin.addMessageAction({id:"quote",Component});
+      plugin.addMessageFooter({id:"quote",Component});
+      remove(); remove();
+    `),
+    );
+    expect(plugin.messageActions).toHaveLength(0);
+    expect(plugin.messageFooters).toHaveLength(1);
+    await plugin.cleanup();
+    expect(plugin.messageFooters).toHaveLength(0);
+  });
+
   it("validates agent header item identity and rejects duplicate or non-component entries", () => {
     expect(() =>
       evaluatePluginClientBundle(

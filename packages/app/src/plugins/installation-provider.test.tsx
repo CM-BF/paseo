@@ -33,6 +33,8 @@ function installation(invoked: string[]): InstalledPlugin {
     cleanup: () => undefined,
     settingsScreens: [],
     agentHeaderItems: [],
+    messageActions: [],
+    messageFooters: [],
     surfaces: [],
     sidebarItems: { header: [], footer: [] },
     legacySidebarItems: [],

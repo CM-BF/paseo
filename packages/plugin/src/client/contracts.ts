@@ -47,6 +47,10 @@ interface PluginNavigableHostProps extends PluginHostProps {
       readonly workspaceId: string;
       readonly serverId?: string;
     }) => void;
+    /** Bounded, identity-checked navigation in the native transcript; absent on older clients. */
+    readonly locateMessage?: (
+      input: PluginLocateMessageInput,
+    ) => Promise<PluginLocateMessageResult>;
     /** Resolves the workspace and requests Paseo's file view; absent on older clients. */
     readonly openFile?: (input: {
       readonly workspaceId: string;
@@ -54,6 +58,47 @@ interface PluginNavigableHostProps extends PluginHostProps {
       readonly serverId?: string;
     }) => Promise<void>;
   };
+}
+
+/** Real message identities; a render row id or text hash is never a message reference. */
+export type PluginMessageReference = {
+  readonly role: "user" | "assistant";
+  readonly turnId?: string;
+} & (
+  | { readonly providerMessageId: string; readonly clientMessageId?: string }
+  | { readonly providerMessageId?: string; readonly clientMessageId: string }
+);
+
+export interface PluginMessagePosition {
+  readonly epoch: string;
+  readonly seq: number;
+}
+
+export interface PluginLocateMessageInput {
+  readonly agentId: string;
+  readonly reference: PluginMessageReference;
+  /** A search hint only; the native message identity is always verified. */
+  readonly position?: PluginMessagePosition;
+  readonly serverId?: string;
+}
+
+export type PluginLocateMessageResult =
+  | { readonly status: "found" }
+  | { readonly status: "not-found" | "limit" | "unavailable" };
+
+export interface PluginMessageProps extends PluginNavigableHostProps {
+  readonly agentId: string;
+  readonly message: {
+    readonly reference: PluginMessageReference;
+    readonly text: string;
+    readonly position: PluginMessagePosition;
+  };
+}
+
+export interface PluginMessageContribution {
+  id: string;
+  /** Native user/assistant messages with persisted identities only. Return null to omit. */
+  Component: ComponentType<PluginMessageProps>;
 }
 
 /** String keys and values: params travel in the screen's URL. */
@@ -201,6 +246,8 @@ export interface PluginClientContext extends PluginCommandCapabilities, PluginCl
   addScreen(contribution: PluginScreenContribution<PluginText>): PluginCleanup;
   addSidebarHeaderItem(contribution: PluginSidebarItemContribution<PluginText>): PluginCleanup;
   addSidebarFooterItem(contribution: PluginSidebarItemContribution<PluginText>): PluginCleanup;
+  addMessageAction(contribution: PluginMessageContribution): PluginCleanup;
+  addMessageFooter(contribution: PluginMessageContribution): PluginCleanup;
   addAgentHeaderItem(contribution: PluginAgentHeaderItemContribution): PluginCleanup;
   addAgentPanel(contribution: PluginAgentPanelContribution<PluginText>): PluginCleanup;
   addWorkspacePanel(contribution: PluginWorkspacePanelContribution<PluginText>): PluginCleanup;
