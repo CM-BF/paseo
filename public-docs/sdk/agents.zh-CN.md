@@ -58,6 +58,27 @@ if (first.status === "idle") {
 
 只管发送、不关心结果时使用 `send()`。调用方需要该轮的结果时使用 `run()`。
 
+如果补充指令只属于刚才观察到的轮次，使用 `steer()`：
+
+```ts
+await reviewer.refresh();
+const turn = reviewer.activeTurn;
+if (turn) {
+  const result = await reviewer.steer("Also check the rollback path.", {
+    expectedTurnId: turn.turnId,
+    messageId: `review-rollback-${turn.turnId}`,
+  });
+  console.log(result.status); // accepted, unavailable, or changed
+}
+```
+
+主机需要支持 `agentTurnSteer`。daemon 会在实际发送时再次核对 Paseo 轮次 ID。
+`changed` 表示目标轮次已不再运行；`unavailable` 表示 Provider 无法接收追加指令。
+两者都不会启动或中断轮次，也不会清除待处理的权限请求。`accepted` 只确认指令已送达，
+不代表任务完成。响应丢失后，使用相同的 `messageId`、文本和 `expectedTurnId` 重试，
+即可读取已保存的结果。`agent_request_outcome_unknown` 表示无法确认是否送达，
+此时不要换一个消息 ID 自动重发。仅在调用方不需要恢复重试时省略 `messageId`。
+
 ## 按标签查找 Agent {#find-agents-by-label}
 
 创建时设置 `labels`，之后按标签过滤。匹配由 daemon 完成：

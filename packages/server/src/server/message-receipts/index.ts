@@ -2,12 +2,14 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import { AgentTurnSteerResultSchema, type AgentTurnSteerResult } from "@getpaseo/protocol/messages";
 import { writeJsonFileAtomic } from "../atomic-file.js";
 
 const ReceiptSchema = z.object({
   fingerprint: z.string(),
   state: z.enum(["pending", "completed"]),
   agentId: z.string(),
+  result: AgentTurnSteerResultSchema.optional(),
 });
 interface SendMessageInput {
   agentId: string;
@@ -16,13 +18,28 @@ interface SendMessageInput {
   send: () => Promise<void>;
   prepare?: () => Promise<void>;
 }
+interface SteerMessageInput extends Omit<SendMessageInput, "send"> {
+  send: () => Promise<AgentTurnSteerResult>;
+}
 
 /** Owns message delivery receipts; creation is owned by CreationService. */
 export class MessageReceipts {
-  private readonly pending = new Map<string, Promise<void>>();
+  private readonly pending = new Map<string, Promise<AgentTurnSteerResult | void>>();
   constructor(private readonly directory: string) {}
 
-  send(input: SendMessageInput): Promise<void> {
+  async send(input: SendMessageInput): Promise<void> {
+    await this.deliver(input);
+  }
+
+  async steer(input: SteerMessageInput): Promise<AgentTurnSteerResult> {
+    const result = await this.deliver(input);
+    if (!result) throw new Error("agent_request_outcome_unknown");
+    return result;
+  }
+
+  private deliver(
+    input: SendMessageInput | SteerMessageInput,
+  ): Promise<AgentTurnSteerResult | void> {
     // Preserve the existing on-disk identity and shape across daemon upgrades.
     const key = digest(["send", input.agentId, input.messageId]);
     const previous = this.pending.get(key);
@@ -38,21 +55,29 @@ export class MessageReceipts {
     return result;
   }
 
-  private async sendOnce(key: string, input: SendMessageInput): Promise<void> {
+  private async sendOnce(
+    key: string,
+    input: SendMessageInput | SteerMessageInput,
+  ): Promise<AgentTurnSteerResult | void> {
     const file = path.join(this.directory, `${key}.json`);
     const fingerprint = digest(input.request);
     const existing = await readReceipt(file);
     if (existing) {
       if (existing.fingerprint !== fingerprint) throw new Error("agent_request_key_conflict");
-      if (existing.state === "completed") return;
+      if (existing.state === "completed") return existing.result;
       // A provider may have accepted the message before its receipt was committed.
       throw new Error("agent_request_outcome_unknown");
     }
     await input.prepare?.();
     const receipt = { fingerprint, agentId: input.agentId };
     await writeJsonFileAtomic(file, { ...receipt, state: "pending" });
-    await input.send();
-    await writeJsonFileAtomic(file, { ...receipt, state: "completed" });
+    const result = await input.send();
+    await writeJsonFileAtomic(file, {
+      ...receipt,
+      state: "completed",
+      ...(result ? { result } : {}),
+    });
+    return result;
   }
 }
 

@@ -75,3 +75,59 @@ test("failed local message preparation does not leave an ambiguous receipt", asy
   await requests.send(input);
   expect(sends).toBe(1);
 });
+
+test.each(["accepted", "unavailable", "changed"] as const)(
+  "exact-turn retries replay the persisted %s result after a lost acknowledgement",
+  async (status) => {
+    const { requests, directory } = await fixture();
+    let deliveries = 0;
+    let preparations = 0;
+    const input = {
+      agentId: "agent",
+      messageId: "steer",
+      request: { operation: "steer", text: "follow up", expectedTurnId: "turn-A" },
+      prepare: async () => {
+        preparations++;
+      },
+      send: async () => {
+        deliveries++;
+        return { status };
+      },
+    };
+    await expect(Promise.all([requests.steer(input), requests.steer(input)])).resolves.toEqual([
+      { status },
+      { status },
+    ]);
+    await expect(new MessageReceipts(directory).steer(input)).resolves.toEqual({ status });
+    expect({ deliveries, preparations }).toEqual({ deliveries: 1, preparations: 1 });
+    await expect(
+      requests.steer({ ...input, request: { ...input.request, expectedTurnId: "turn-B" } }),
+    ).rejects.toThrow("agent_request_key_conflict");
+    await expect(
+      requests.steer({ ...input, request: { ...input.request, text: "different" } }),
+    ).rejects.toThrow("agent_request_key_conflict");
+    await expect(
+      requests.send({ ...input, request: { text: "follow up" }, send: async () => {} }),
+    ).rejects.toThrow("agent_request_key_conflict");
+    expect(deliveries).toBe(1);
+  },
+);
+
+test("ambiguous exact-turn acceptance retains a pending receipt without replay", async () => {
+  const { requests, directory } = await fixture();
+  let deliveries = 0;
+  const input = {
+    agentId: "agent",
+    messageId: "steer",
+    request: { operation: "steer", text: "follow up", expectedTurnId: "turn-A" },
+    send: async () => {
+      deliveries++;
+      throw new Error("lost provider ACK");
+    },
+  };
+  await expect(requests.steer(input)).rejects.toThrow("lost provider ACK");
+  await expect(new MessageReceipts(directory).steer(input)).rejects.toThrow(
+    "agent_request_outcome_unknown",
+  );
+  expect(deliveries).toBe(1);
+});

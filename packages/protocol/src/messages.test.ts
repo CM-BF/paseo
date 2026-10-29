@@ -93,6 +93,45 @@ describe("agent instruction updates", () => {
   });
 });
 
+describe("exact-turn steering", () => {
+  const request = {
+    type: "agent.turn.steer.request",
+    requestId: "request",
+    agentId: "agent",
+    text: "follow up",
+    messageId: "message",
+    expectedTurnId: "turn-A",
+  };
+  test("requires a turn and a durable message identity on its dedicated request", () => {
+    expect(SessionInboundMessageSchema.parse(request)).toEqual(request);
+    for (const field of ["expectedTurnId", "messageId"]) {
+      expect(
+        SessionInboundMessageSchema.safeParse({ ...request, [field]: undefined }).success,
+      ).toBe(false);
+      expect(SessionInboundMessageSchema.safeParse({ ...request, [field]: "" }).success).toBe(
+        false,
+      );
+    }
+  });
+  test.each(["accepted", "unavailable", "changed"])(
+    "preserves the %s delivery result",
+    (status) => {
+      const response = {
+        type: "agent.turn.steer.response",
+        payload: {
+          requestId: "request",
+          agentId: "agent",
+          messageId: "message",
+          expectedTurnId: "turn-A",
+          result: { status },
+          error: null,
+        },
+      };
+      expect(SessionOutboundMessageSchema.parse(response)).toEqual(response);
+    },
+  );
+});
+
 describe("project icon revision compatibility", () => {
   const project = {
     projectId: "project-1",

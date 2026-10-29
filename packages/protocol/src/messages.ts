@@ -2079,6 +2079,34 @@ export const AgentInstructionsUpdateSchema = z.object({
 });
 export type AgentInstructionsUpdate = z.infer<typeof AgentInstructionsUpdateSchema>;
 
+export const AgentTurnSteerOptionsSchema = z.object({
+  expectedTurnId: z.string().min(1),
+  messageId: z.string().min(1).optional(),
+});
+export type AgentTurnSteerOptions = z.infer<typeof AgentTurnSteerOptionsSchema>;
+export const AgentTurnSteerResultSchema = z.object({
+  status: z.enum(["accepted", "unavailable", "changed"]),
+});
+export type AgentTurnSteerResult = z.infer<typeof AgentTurnSteerResultSchema>;
+export const AgentTurnSteerRequestMessageSchema = AgentTurnSteerOptionsSchema.extend({
+  type: z.literal("agent.turn.steer.request"),
+  agentId: z.string(),
+  requestId: z.string(),
+  text: z.string(),
+  messageId: z.string().min(1),
+});
+export const AgentTurnSteerResponseMessageSchema = z.object({
+  type: z.literal("agent.turn.steer.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    messageId: z.string(),
+    expectedTurnId: z.string(),
+    result: AgentTurnSteerResultSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
 export const AgentInstructionsUpdateRequestMessageSchema = AgentInstructionsUpdateSchema.extend({
   type: z.literal("agent.update_instructions.request"),
   agentId: z.string(),
@@ -3402,6 +3430,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   SetAgentFeatureRequestMessageSchema,
   AgentConfigApplyRequestMessageSchema,
   AgentInstructionsUpdateRequestMessageSchema,
+  AgentTurnSteerRequestMessageSchema,
   AgentDetachRequestMessageSchema,
   AgentRewindRequestMessageSchema,
   AgentPermissionResponseMessageSchema,
@@ -3881,6 +3910,7 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(agentConfigApply): added in v0.3.2, remove gate after 2027-02-11.
         agentConfigApply: z.boolean().optional(),
         agentInstructionsUpdate: z.boolean().optional(),
+        agentTurnSteer: z.boolean().optional(),
       })
       .optional(),
   })
@@ -7145,6 +7175,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   SetAgentFeatureResponseMessageSchema,
   AgentConfigApplyResponseMessageSchema,
   AgentInstructionsUpdateResponseMessageSchema,
+  AgentTurnSteerResponseMessageSchema,
   AgentDetachResponseMessageSchema,
   AgentRewindResponseMessageSchema,
   UpdateAgentResponseMessageSchema,

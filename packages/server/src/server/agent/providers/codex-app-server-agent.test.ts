@@ -226,6 +226,25 @@ function deferred<T>() {
 }
 
 describe("Codex active-turn steering admission", () => {
+  test("a caller's stale Paseo turn never reaches Codex or clears permissions", async () => {
+    const appServer = createFakeCodexAppServer();
+    const { session } = await startPublicSteeringSession(appServer);
+    castInternals<{ emitSyntheticPlanApprovalRequest: (planText: string) => void }>(
+      session,
+    ).emitSyntheticPlanApprovalRequest("Keep this permission");
+    await expect(
+      session.steerActiveTurn!("stale", { expectedTurnId: "stale-turn" }),
+    ).resolves.toEqual({ status: "unavailable" });
+    expect(appServer.requests().filter((request) => request.method === "turn/steer")).toEqual([]);
+    expect(session.getPendingPermissions()).toHaveLength(1);
+    await session.respondToPermission(session.getPendingPermissions()[0]!.id, {
+      behavior: "deny",
+      message: "test cleanup",
+    });
+    await session.close();
+    appServer.assertNoErrors();
+  });
+
   test("a steer without the clearing contract leaves permissions open", async () => {
     const appServer = createFakeCodexAppServer({
       "turn/steer": () => ({ turn: { id: "native-A" } }),

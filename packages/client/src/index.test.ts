@@ -390,6 +390,76 @@ test("instruction updates require host support before sending a request", async 
   await client.close();
 });
 
+test("exact-turn steering requires host support without using the legacy send request", async () => {
+  const { client, ws } = await connectClient();
+  const sent = ws.sent.length;
+  await expect(
+    client.agents.ref("agent_sdk").steer("follow up", { expectedTurnId: "turn-A" }),
+  ).rejects.toMatchObject({ code: "unsupported_capability" });
+  expect(ws.sent).toHaveLength(sent);
+  await client.close();
+});
+
+test.each(["accepted", "unavailable", "changed"] as const)(
+  "exact-turn steering exposes %s without a fallback request",
+  async (status) => {
+    const { client, ws } = await connectClient({ agentTurnSteer: true });
+    const agent = client.agents.ref("agent_sdk");
+    const before = ws.sent.length;
+    const pending = agent.steer("follow up", { expectedTurnId: "turn-A", messageId: "steer-1" });
+    const request = parseSentSessionMessage(ws.sent.at(-1));
+    expect(request).toEqual({
+      type: "agent.turn.steer.request",
+      agentId: agent.id,
+      text: "follow up",
+      expectedTurnId: "turn-A",
+      messageId: "steer-1",
+      requestId: expect.any(String),
+    });
+    ws.message(
+      sessionMessage({
+        type: "agent.turn.steer.response",
+        payload: {
+          requestId: request.requestId,
+          agentId: agent.id,
+          expectedTurnId: "turn-A",
+          messageId: "steer-1",
+          result: { status },
+          error: null,
+        },
+      }),
+    );
+    await expect(pending).resolves.toEqual({ status });
+    expect(ws.sent).toHaveLength(before + 1);
+    await client.close();
+  },
+);
+
+test("exact-turn steering exposes an uncertain receipt without retrying delivery", async () => {
+  const { client, ws } = await connectClient({ agentTurnSteer: true });
+  const before = ws.sent.length;
+  const pending = client.agents
+    .ref("agent_sdk")
+    .steer("follow up", { expectedTurnId: "turn-A", messageId: "steer-1" });
+  const request = parseSentSessionMessage(ws.sent.at(-1));
+  ws.message(
+    sessionMessage({
+      type: "agent.turn.steer.response",
+      payload: {
+        requestId: request.requestId,
+        agentId: "agent_sdk",
+        expectedTurnId: "turn-A",
+        messageId: "steer-1",
+        result: null,
+        error: "agent_request_outcome_unknown",
+      },
+    }),
+  );
+  await expect(pending).rejects.toThrow("agent_request_outcome_unknown");
+  expect(ws.sent).toHaveLength(before + 1);
+  await client.close();
+});
+
 test("instruction updates refresh the handle only on an accepted response", async () => {
   const { client, ws } = await connectClient({ agentInstructionsUpdate: true });
   const before = createAgent();

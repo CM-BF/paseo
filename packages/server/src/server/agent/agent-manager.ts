@@ -145,6 +145,13 @@ export class AgentRunCancellationError extends Error {
   }
 }
 
+export class AgentTurnChangedError extends Error {
+  constructor() {
+    super("Active turn changed before steering could be delivered");
+    this.name = "AgentTurnChangedError";
+  }
+}
+
 export class AgentInstructionsUpdateError extends Error {
   constructor(
     readonly code: "busy" | "permission_pending" | "active_children" | "persistence_unavailable",
@@ -367,6 +374,10 @@ export interface AgentManagerOptions {
 export type ActiveTurnSteerDispatchResult =
   | { status: "inactive" | "steered" }
   | { status: "replaced"; iterator: AsyncGenerator<AgentStreamEvent> };
+
+export interface AgentSteerRequestOptions extends AgentSteerOptions {
+  expectedTurnId?: string;
+}
 
 function stripSteerOptions(options?: AgentSteerOptions): AgentRunOptions | undefined {
   if (!options) return undefined;
@@ -3403,11 +3414,15 @@ export class AgentManager {
   async steerAgentRun(
     agentId: string,
     prompt: AgentPromptInput,
-    options?: AgentSteerOptions,
+    options?: AgentSteerRequestOptions,
   ): Promise<SteerResult> {
     this.assertRuntimeMutationAvailable(agentId);
     const agent = this.requireSessionAgent(agentId);
-    const expectedTurnId = agent.activeForegroundTurnId ?? agent.activeTurnId;
+    const expectedTurnId =
+      options?.expectedTurnId ?? agent.activeForegroundTurnId ?? agent.activeTurnId;
+    if (options?.expectedTurnId) {
+      this.assertSteerAdmissionOwnsTurn(agent, options.expectedTurnId);
+    }
     if (!expectedTurnId || !agent.session.steerActiveTurn) {
       return { status: "unavailable" };
     }
@@ -3424,7 +3439,7 @@ export class AgentManager {
     // An unavailable answer is only safe to fall back from while this admission
     // still owns the active turn. Never let an A admission replace a later B.
     if (result.status === "unavailable" && agent.activeTurnId !== expectedTurnId) {
-      throw new Error("Active turn changed before steering could be delivered");
+      throw new AgentTurnChangedError();
     }
     return result;
   }
@@ -3477,8 +3492,8 @@ export class AgentManager {
   }
 
   private assertSteerAdmissionOwnsTurn(agent: ActiveManagedAgent, expectedTurnId: string): void {
-    if (agent.activeTurnId !== expectedTurnId) {
-      throw new Error("Active turn changed before steering could be delivered");
+    if (this.agents.get(agent.id) !== agent || agent.activeTurnId !== expectedTurnId) {
+      throw new AgentTurnChangedError();
     }
   }
 
@@ -3488,6 +3503,7 @@ export class AgentManager {
     operation: () => Promise<T>,
   ): Promise<T> {
     return this.runForegroundMutation(agent.id, async () => {
+      this.assertRuntimeMutationAvailable(agent.id);
       await this.drainSessionEvents(agent.id);
       this.agentStreamCoalescer.flushFor(agent.id);
       this.assertSteerAdmissionOwnsTurn(agent, expectedTurnId);

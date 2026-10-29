@@ -17,6 +17,7 @@ import {
 } from "./connection/index.js";
 import { CreationClient } from "./creation/index.js";
 import type { CreationSnapshot } from "@getpaseo/protocol/messages";
+import type { AgentTurnSteerOptions, AgentTurnSteerResult } from "@getpaseo/protocol/messages";
 import type { z } from "zod";
 import type { SessionEventSubscription } from "@getpaseo/protocol/messages";
 import type { LocalSpeechModel } from "@getpaseo/protocol/speech/rpc-schemas";
@@ -4032,6 +4033,31 @@ export class DaemonClient {
     if (!payload.accepted) {
       throw new Error(payload.error ?? "setAgentFeature rejected");
     }
+  }
+
+  async steerAgentTurn(
+    agentId: string,
+    text: string,
+    options: AgentTurnSteerOptions,
+  ): Promise<AgentTurnSteerResult> {
+    // COMPAT(agentTurnSteer): added 2026-10-29; remove after 2027-04-29 once the daemon floor supports it.
+    if (this.getLastServerInfoMessage()?.features?.agentTurnSteer !== true) {
+      throw Object.assign(new Error("Update the host to steer a specific agent turn."), {
+        code: "unsupported_capability",
+      });
+    }
+    const payload = await this.sendCorrelatedSessionRequest({
+      message: {
+        type: "agent.turn.steer.request",
+        agentId,
+        text,
+        expectedTurnId: options.expectedTurnId,
+        messageId: options.messageId ?? this.createRequestId(),
+      },
+      responseType: "agent.turn.steer.response",
+    });
+    if (!payload.result) throw new Error(payload.error ?? "Steering failed");
+    return payload.result;
   }
 
   async updateAgentInstructions(

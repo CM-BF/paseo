@@ -116,7 +116,9 @@ const append = defineRpc({
 const configure = defineRpc({
   name: "configure",
   input: z.object({ agentId: z.string() }),
-  output: z.object({ scheduleId: z.string(), model: z.string(), feature: z.boolean(), runStatus: z.string() }),
+  output: z.object({ scheduleId: z.string(), model: z.string(), feature: z.boolean(), runStatus: z.string(),
+    steer: z.object({ status: z.literal("changed") }), steerRetry: z.object({ status: z.literal("changed") }),
+  }),
 });
 
 export default function contribute(server: PluginServerContext) {
@@ -151,6 +153,9 @@ export default function contribute(server: PluginServerContext) {
     await agent.setThinkingOption(null);
     await agent.setFeature("test_feature", true);
     await agent.updateInstructions({ systemPrompt: "Plugin personality", mcpServers: {} });
+    const steerOptions = { expectedTurnId: "finished-turn", messageId: "plugin-exact-steer" };
+    const steer = await agent.steer("Only the finished turn", steerOptions);
+    const steerRetry = await agent.steer("Only the finished turn", steerOptions);
     const snapshot = await agent.refresh();
     const created = await paseo.schedules.create({
       name: "Plugin review", prompt: "Scheduled by a plugin handler",
@@ -169,6 +174,7 @@ export default function contribute(server: PluginServerContext) {
     if (logs.error) throw new Error(logs.error);
     return {
       scheduleId: options.id,
+      steer, steerRetry,
       model: snapshot.agent.model,
       feature: snapshot.agent.features.find((feature) => feature.id === "test_feature").value,
       runStatus: logs.runs[0].status,
@@ -234,6 +240,8 @@ export default function contribute(server: PluginServerContext) {
     const configured = await client.invokePluginRpc("paseo-api", "configure", { agentId });
     expect(configured).toEqual({
       scheduleId: expect.any(String),
+      steer: { status: "changed" },
+      steerRetry: { status: "changed" },
       model: "test-model",
       feature: true,
       runStatus: "succeeded",

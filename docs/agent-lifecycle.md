@@ -124,6 +124,13 @@ registration and persistence; it never means only that a desired prompt was save
 
 ### Cancellation
 
+`agent.turn.steer.request` delivers only to its caller-specified Paseo turn. The foreground
+admission lane rechecks that identity after draining Provider events, and Provider adapters check
+their native turn before sending. A changed or unsupported turn never falls back to replacement
+or a new run and never clears permissions. Message receipts bind the text and expected turn to
+the message ID and persist the delivery result, so retries can replay an acknowledged result even
+after the turn finishes. An interrupted pending receipt remains uncertain and is not resent.
+
 Provider interruption is idempotent at the `AgentSession` boundary. It resolves when the prior
 foreground turn can no longer run, including when the provider reports that it is already idle. It
 rejects only when the provider may still own the turn. Provider adapters translate native errors

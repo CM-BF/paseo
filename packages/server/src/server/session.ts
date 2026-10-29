@@ -107,6 +107,7 @@ import {
   AgentManager,
   AgentRunCancellationError,
   AgentInstructionsUpdateError,
+  AgentTurnChangedError,
 } from "./agent/agent-manager.js";
 import { buildTimelinePromptIndex } from "./agent/timeline-prompt-index.js";
 import { ProviderSnapshotManager } from "./agent/provider-snapshot-manager.js";
@@ -469,7 +470,7 @@ export interface SessionOptions {
   worktreesRoot?: string;
   agentManager: AgentManager;
   agentStorage: AgentStorage;
-  messageReceipts: Pick<MessageReceipts, "send">;
+  messageReceipts: Pick<MessageReceipts, "send" | "steer">;
   agentMessages: AgentMessageDelivery;
   creationService: Pick<CreationService, "create" | "subscribe">;
   projectRegistry: ProjectRegistry;
@@ -829,7 +830,7 @@ export class Session {
   private readonly daemonSession: DaemonSession;
   private readonly hubExecutionController: HubExecutionController | null;
   private readonly workspaceScripts: WorkspaceScriptsService;
-  private readonly messageReceipts: Pick<MessageReceipts, "send">;
+  private readonly messageReceipts: Pick<MessageReceipts, "send" | "steer">;
   private readonly agentMessages: AgentMessageDelivery;
   private readonly createAgentLifecycleDispatch: CreateAgentLifecycleDispatch;
   private readonly creationService: Pick<CreationService, "create" | "subscribe">;
@@ -2430,6 +2431,7 @@ export class Session {
       this.dispatchAgentObservationMessage(msg, source) ??
       this.dispatchHubExecutionMessage(msg) ??
       this.dispatchCreationMessage(msg, source) ??
+      this.dispatchAgentTurnMessage(msg, source) ??
       this.dispatchAgentLifecycleMessage(msg) ??
       this.dispatchAgentConfigMessage(msg, source) ??
       this.dispatchCheckoutMessage(msg) ??
@@ -2875,6 +2877,26 @@ export class Session {
     }
   }
 
+  private dispatchAgentTurnMessage(
+    msg: SessionInboundMessage,
+    source?: object,
+  ): Promise<void> | undefined {
+    switch (msg.type) {
+      case "send_agent_message_request":
+        return this.handleSendAgentMessageRequest(msg);
+      case "agent.turn.steer.request":
+        return this.handleAgentTurnSteer(msg, source);
+      case "wait_for_finish_request":
+        return this.handleWaitForFinish(msg.agentId, msg.requestId, msg.timeoutMs);
+      case "cancel_agent_request":
+        return this.handleCancelAgentRequest(msg.agentId, msg.requestId);
+      case "agent_permission_response":
+        return this.handleAgentPermissionResponse(msg.agentId, msg.requestId, msg.response);
+      default:
+        return undefined;
+    }
+  }
+
   private dispatchAgentLifecycleMessage(msg: SessionInboundMessage): Promise<void> | undefined {
     switch (msg.type) {
       case "fetch_agents_request":
@@ -2897,10 +2919,6 @@ export class Session {
         return this.handleProjectRenameRequest(msg.projectId, msg.customName, msg.requestId);
       case "project.icon.set.request":
         return this.handleProjectIconSetRequest(msg);
-      case "send_agent_message_request":
-        return this.handleSendAgentMessageRequest(msg);
-      case "wait_for_finish_request":
-        return this.handleWaitForFinish(msg.agentId, msg.requestId, msg.timeoutMs);
       case "create_agent_request":
         return this.handleCreateAgentRequest(msg);
       case "resume_agent_request":
@@ -2909,10 +2927,6 @@ export class Session {
         return this.handleImportAgentRequest(msg);
       case "refresh_agent_request":
         return this.handleRefreshAgentRequest(msg);
-      case "cancel_agent_request":
-        return this.handleCancelAgentRequest(msg.agentId, msg.requestId);
-      case "agent_permission_response":
-        return this.handleAgentPermissionResponse(msg.agentId, msg.requestId, msg.response);
       case "clear_agent_attention":
         return this.handleClearAgentAttention(msg.agentId, msg.requestId);
       default:
@@ -8317,6 +8331,52 @@ export class Session {
     if (stored && !stored.title && !stored.lastUserMessageAt) {
       const { provisionalTitle } = resolveCreateAgentTitles({ initialPrompt: text });
       if (provisionalTitle) await this.agentManager.setTitle(agentId, provisionalTitle);
+    }
+  }
+
+  private async handleAgentTurnSteer(
+    msg: Extract<SessionInboundMessage, { type: "agent.turn.steer.request" }>,
+    source?: object,
+  ): Promise<void> {
+    const identity = {
+      requestId: msg.requestId,
+      agentId: msg.agentId,
+      messageId: msg.messageId,
+      expectedTurnId: msg.expectedTurnId,
+    };
+    try {
+      const result = await this.messageReceipts.steer({
+        agentId: msg.agentId,
+        messageId: msg.messageId,
+        request: { operation: "steer", text: msg.text, expectedTurnId: msg.expectedTurnId },
+        prepare: () => this.prepareAgentMessage(msg.agentId, msg.text),
+        send: async () => {
+          try {
+            return await this.agentManager.steerAgentRun(msg.agentId, msg.text, {
+              expectedTurnId: msg.expectedTurnId,
+              clientMessageId: msg.messageId,
+            });
+          } catch (error) {
+            if (error instanceof AgentTurnChangedError) return { status: "changed" };
+            throw error;
+          }
+        },
+      });
+      this.emitForSource(
+        {
+          type: "agent.turn.steer.response",
+          payload: { ...identity, result, error: null },
+        },
+        source,
+      );
+    } catch (error) {
+      this.emitForSource(
+        {
+          type: "agent.turn.steer.response",
+          payload: { ...identity, result: null, error: errorToFriendlyMessage(error) },
+        },
+        source,
+      );
     }
   }
 

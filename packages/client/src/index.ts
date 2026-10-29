@@ -12,6 +12,8 @@ export type { AgentProviderNotice } from "@getpaseo/protocol/agent-types";
 import type {
   AgentSnapshotPayload,
   AgentInstructionsUpdate,
+  AgentTurnSteerOptions,
+  AgentTurnSteerResult,
   CreationSnapshot,
   CreateAgentRequestMessage,
   FetchWorkspacesRequestMessage,
@@ -129,6 +131,8 @@ export interface PaseoClientConfig {
 export type PaseoWorkspace = WorkspaceDescriptorPayload;
 export type PaseoAgent = AgentSnapshotPayload;
 export type PaseoAgentInstructionsUpdateOptions = AgentInstructionsUpdate;
+export type PaseoAgentSteerOptions = AgentTurnSteerOptions;
+export type PaseoAgentSteerResult = AgentTurnSteerResult;
 export type PaseoAgentListOptions = FetchAgentsOptions;
 export type PaseoProject = WorkspaceProjectDescriptorPayload;
 export type PaseoProjectListOptions = Omit<ProjectListRequestMessage, "type" | "requestId"> & {
@@ -394,6 +398,8 @@ export interface PaseoAgentHandle {
    */
   reload(options?: { requestId?: string }): Promise<PaseoAgentRefetchResult | null>;
   send(text: string, options?: PaseoAgentSendOptions): Promise<void>;
+  /** Appends only to the specified active turn. Never starts or replaces a turn. */
+  steer(text: string, options: PaseoAgentSteerOptions): Promise<PaseoAgentSteerResult>;
   /** Changes the model within this agent's provider; null restores the default. */
   setModel(modelId: string | null): Promise<void>;
   /** Returns the provider notice, if any; null restores the default option. */
@@ -1024,6 +1030,7 @@ function createAgentHandleFactory(
       send: async (text, options) => {
         await daemonClient.sendAgentMessage(id, text, options);
       },
+      steer: (text, options) => daemonClient.steerAgentTurn(id, text, options),
       setModel: (modelId) => daemonClient.setAgentModel(id, modelId),
       setThinkingOption: (thinkingOptionId) =>
         daemonClient.setAgentThinkingOption(id, thinkingOptionId),

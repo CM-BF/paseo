@@ -46,6 +46,8 @@ import { DownloadTokenStore } from "./file-download/token-store.js";
 import { StructuredAgentFallbackError } from "./agent/agent-response-loop.js";
 import type { StoredAgentRecord } from "./agent/agent-storage.js";
 import type { AgentManagerEvent } from "./agent/agent-manager.js";
+import { AgentTurnChangedError } from "./agent/agent-manager.js";
+import { MessageReceipts } from "./message-receipts/index.js";
 import type { ProviderSnapshotManager } from "./agent/provider-snapshot-manager.js";
 import { WorkspaceLabelError, type WorkspaceLabelService } from "./workspace-labels/index.js";
 import { createPersistedProjectRecord } from "./workspace-registry.js";
@@ -306,6 +308,7 @@ vi.mock("./worktree-bootstrap.js", async (importOriginal) => {
 });
 
 interface SessionForTestOptions {
+  messageReceipts?: SessionOptions["messageReceipts"];
   workspaceRuntimeStore?: WorkspaceRuntimeStore;
   sendToSource?: SessionOptions["onMessageToSource"];
   clientId?: string;
@@ -387,7 +390,7 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
 
   const sessionOptions: SessionOptions = {
     workspaceRuntimeStore: options.workspaceRuntimeStore ?? createWorkspaceRuntimeStore(),
-    messageReceipts: createMessageReceiptsStub(),
+    messageReceipts: options.messageReceipts ?? createMessageReceiptsStub(),
     agentMessages: createAgentMessageDeliveryStub(),
     creationService: createTestCreationService(),
     clientId: options.clientId ?? "test-client",
@@ -466,6 +469,107 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
   if (options.sendToSource) sessionOptions.onMessageToSource = options.sendToSource;
   return new Session(sessionOptions);
 }
+
+test.each(["accepted", "unavailable", "changed"] as const)(
+  "exact-turn RPC persists %s and replays to the requesting source without redelivery",
+  async (status) => {
+    const directory = mkdtempSync(join(tmpdir(), "paseo-session-steer-"));
+    const messages: SessionOutboundMessage[] = [];
+    const targetedMessages: Array<{ source: object; message: SessionOutboundMessage }> = [];
+    const steerAgentRun = vi.fn(async () => {
+      if (status === "changed") throw new AgentTurnChangedError();
+      return { status };
+    });
+    const getAgent = vi.fn(() => ({ id: "agent", provider: "codex", lifecycle: "running" }));
+    const first = createSessionForTest({
+      messages,
+      targetedMessages,
+      messageReceipts: new MessageReceipts(directory),
+      agentManager: { getAgent, steerAgentRun, waitForAgentClose: async () => {} },
+    });
+    const second = createSessionForTest({
+      messages,
+      targetedMessages,
+      messageReceipts: new MessageReceipts(directory),
+      agentManager: { steerAgentRun },
+    });
+    const source = {};
+    const retrySource = {};
+    first.updateClientCapabilities({ selective_agent_timeline: true }, source);
+    second.updateClientCapabilities({ selective_agent_timeline: true }, retrySource);
+    const request = {
+      type: "agent.turn.steer.request" as const,
+      requestId: "first",
+      agentId: "agent",
+      text: "follow up",
+      expectedTurnId: "turn-A",
+      messageId: "message",
+    };
+    try {
+      await first.handleMessage(request, source);
+      await second.handleMessage({ ...request, requestId: "retry" }, retrySource);
+      expect(steerAgentRun).toHaveBeenCalledExactlyOnceWith("agent", "follow up", {
+        expectedTurnId: "turn-A",
+        clientMessageId: "message",
+      });
+      expect(getAgent).toHaveBeenCalledWith("agent");
+      expect(messages).toEqual([]);
+      expect(targetedMessages).toEqual([
+        {
+          source,
+          message: {
+            type: "agent.turn.steer.response",
+            payload: {
+              requestId: "first",
+              agentId: "agent",
+              expectedTurnId: "turn-A",
+              messageId: "message",
+              result: { status },
+              error: null,
+            },
+          },
+        },
+        {
+          source: retrySource,
+          message: {
+            type: "agent.turn.steer.response",
+            payload: {
+              requestId: "retry",
+              agentId: "agent",
+              expectedTurnId: "turn-A",
+              messageId: "message",
+              result: { status },
+              error: null,
+            },
+          },
+        },
+      ]);
+      await second.handleMessage(
+        { ...request, requestId: "conflict", expectedTurnId: "turn-B" },
+        retrySource,
+      );
+      expect(targetedMessages.at(-1)).toEqual({
+        source: retrySource,
+        message: {
+          type: "agent.turn.steer.response",
+          payload: {
+            requestId: "conflict",
+            agentId: "agent",
+            expectedTurnId: "turn-B",
+            messageId: "message",
+            result: null,
+            error: "agent_request_key_conflict",
+          },
+        },
+      });
+      expect(steerAgentRun).toHaveBeenCalledTimes(1);
+    } finally {
+      await first.cleanup();
+      await second.cleanup();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  },
+);
 
 test("routes host-scoped agent skills requests through the daemon owner", async () => {
   const messages: SessionOutboundMessage[] = [];

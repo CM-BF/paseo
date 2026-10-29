@@ -1453,6 +1453,85 @@ test("unavailable steer interrupts once and starts one replacement turn", async 
   }
 });
 
+test.each(["accepted", "unavailable"] as const)(
+  "exact-turn steer returns %s without interrupting or starting a turn",
+  async (status) => {
+    const session = new SteeringTestSession({ provider: "codex", cwd: process.cwd() });
+    const { manager, agentId, workdir } = await startAndSteerThroughManager(session);
+    try {
+      session.steerResult = status;
+      await expect(
+        manager.steerAgentRun(agentId, "follow up", {
+          expectedTurnId: "active-turn-1",
+          clientMessageId: "exact-steer",
+        }),
+      ).resolves.toEqual({ status });
+      await expect(
+        manager.steerAgentRun(agentId, "stale follow up", {
+          expectedTurnId: "another-turn",
+          clientMessageId: "stale-steer",
+        }),
+      ).rejects.toMatchObject({ name: "AgentTurnChangedError" });
+      expect({
+        steers: session.steerCount,
+        starts: session.startCount,
+        interrupts: session.interruptCount,
+      }).toEqual({ steers: 2, starts: 1, interrupts: 0 });
+      expect(manager.getTimeline(agentId)).not.toContainEqual(
+        expect.objectContaining({ clientMessageId: "stale-steer" }),
+      );
+    } finally {
+      await manager.closeAgent(agentId);
+      rmSync(workdir, { recursive: true, force: true });
+    }
+  },
+);
+
+test("exact-turn steer rechecks its caller's turn after waiting for another admission", async () => {
+  const entered = deferred<void>();
+  const release = deferred<void>();
+  class HeldSteerSession extends SteeringTestSession {
+    override async steerActiveTurn(
+      prompt: AgentPromptInput,
+      options: import("./agent-sdk-types.js").SteerActiveTurnOptions,
+    ) {
+      if (prompt === "held") {
+        entered.resolve();
+        await release.promise;
+      }
+      return super.steerActiveTurn(prompt, options);
+    }
+  }
+  const session = new HeldSteerSession({ provider: "codex", cwd: process.cwd() });
+  const { manager, agentId, workdir } = await startAndSteerThroughManager(session);
+  try {
+    const held = manager.steerAgentRun(agentId, "held", { expectedTurnId: "active-turn-1" });
+    await entered.promise;
+    const queued = manager.steerAgentRun(agentId, "stale", {
+      expectedTurnId: "active-turn-1",
+      clientMessageId: "stale",
+    });
+    const rejected = expect(queued).rejects.toMatchObject({ name: "AgentTurnChangedError" });
+    session.pushEvent({ type: "turn_completed", provider: "codex", turnId: "active-turn-1" });
+    session.pushEvent({ type: "turn_started", provider: "codex", turnId: "provider-turn-B" });
+    release.resolve();
+    await expect(held).resolves.toEqual({ status: "accepted" });
+    await rejected;
+    expect({
+      steers: session.steerCount,
+      starts: session.startCount,
+      interrupts: session.interruptCount,
+    }).toEqual({ steers: 2, starts: 1, interrupts: 0 });
+    expect(manager.getTimeline(agentId)).not.toContainEqual(
+      expect.objectContaining({ clientMessageId: "stale" }),
+    );
+  } finally {
+    release.resolve();
+    await manager.closeAgent(agentId);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("orders an accepted steer before output emitted while acknowledgement is pending", async () => {
   const entered = deferred<void>();
   const release = deferred<void>();

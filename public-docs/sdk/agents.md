@@ -60,6 +60,28 @@ if (first.status === "idle") {
 
 Use `send()` for fire-and-forget delivery. Use `run()` when the caller needs the outcome of that turn.
 
+Use `steer()` when a follow-up belongs only to the turn you observed:
+
+```ts
+await reviewer.refresh();
+const turn = reviewer.activeTurn;
+if (turn) {
+  const result = await reviewer.steer("Also check the rollback path.", {
+    expectedTurnId: turn.turnId,
+    messageId: `review-rollback-${turn.turnId}`,
+  });
+  console.log(result.status); // accepted, unavailable, or changed
+}
+```
+
+This requires host support for `agentTurnSteer`. The daemon checks the Paseo turn ID again at
+delivery. `changed` means that turn is no longer active; `unavailable` means the Provider cannot
+accept steering. Neither starts or interrupts a turn, and pending permissions remain open.
+`accepted` acknowledges delivery, not completion. Reuse the same `messageId`, text, and
+`expectedTurnId` after a lost response to retrieve the saved result. An
+`agent_request_outcome_unknown` error means acceptance could not be confirmed; do not automatically
+resend with a new message ID. Omit `messageId` only when the caller does not need retry recovery.
+
 ## Find agents by label
 
 Set `labels` at creation, then filter on them. The daemon does the matching:
