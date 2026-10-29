@@ -1900,6 +1900,61 @@ close controls, drag handles or overflow behavior. A failed item renders nothing
 
 Older clients do not expose this registration method; feature-detect it and omit the accessory.
 
+## Native conversation asides
+
+`client.addAgentAside({ id, Component })` registers an aside beside an existing native agent
+conversation. Open it with `await client.openAgentAside({ id, parentAgentId, agentId, params })`.
+The installation supplies the host; `agentId` is a different, existing native conversation.
+Create and authorize your domain relationship on the server before opening it. Opening an aside
+does not create a session or send a prompt.
+
+```tsx
+import type { PluginAgentAsideProps } from "@getpaseo/plugin/client";
+import { Pressable, Text, View } from "react-native";
+
+function TopicAside({ Conversation, close, theme }: PluginAgentAsideProps) {
+  return (
+    <View style={{ flex: 1, backgroundColor: theme.colors.surface0 }}>
+      <Pressable onPress={close}>
+        <Text style={{ color: theme.colors.foreground }}>Close topic</Text>
+      </Pressable>
+      <Conversation
+        streamHeader={<Text style={{ color: theme.colors.foreground }}>Topic context</Text>}
+      />
+    </View>
+  );
+}
+
+client.addAgentAside?.({ id: "topic", Component: TopicAside });
+// In an explicit user action, with an existing server-validated topic agent:
+const opening = await client.openAgentAside?.({
+  id: "topic",
+  parentAgentId,
+  agentId: topicAgentId,
+});
+```
+
+`Component` receives `PluginAgentAsideProps`: `host`, `theme`, `layout`, optional `navigation`,
+`parentAgentId`, `agentId`, the child's actual `workspaceId`, string `params`, `visible`, `focused`,
+`close()`, and `Conversation`. Render `Conversation` once in a flex container. Paseo binds it to
+the child; its tools, permissions, native input, draft, and transcript belong to that child.
+`streamHeader` appears before the oldest history in the same scrolling container and never becomes
+a message, model input, or message identity. Plugins own the header, root preview, and close control.
+
+The parent must be visible on this host. Paseo resolves the child before showing the aside and
+rejects an opening if its parent, installation, or connection changes during lookup. An aside is
+scoped to the host, parent surface, plugin, and contribution. It occupies half the parent surface,
+up to 448 points wide; compact layouts overlay the parent while retaining its draft. It is not a
+workspace tab. Focus and retained visibility are independent of the parent conversation.
+
+`close()` on the props or returned handle only unmounts that opening. A stale handle cannot close
+a later opening. Closing, removing the contribution, or unloading the plugin never stops or
+archives either agent. Explicit links to files or other conversations use their actual child
+workspace or agent identity. `/clear`, `/new`, `/exit`, `/quit`, and `/q` are rejected before
+clearing the child draft: asides do not yet expose a reset/rebind contract. Opening an aside from
+inside another aside is not supported. Older clients lack both methods; feature-detect them and
+explain the missing capability instead of silently opening a tab.
+
 ## Header buttons
 
 Try the [button example](https://github.com/getpaseo/paseo/tree/main/plugin-examples/buttons) for

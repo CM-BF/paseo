@@ -9,6 +9,9 @@ const runtime = {
   openScreen() {},
   openSurface() {},
   openPanel() {},
+  async openAgentAside() {
+    return { close() {} };
+  },
   addHeaderButton() {
     return { update() {}, remove() {} };
   },
@@ -76,6 +79,27 @@ describe("evaluatePluginClientBundle", () => {
     ).toThrow("Duplicate agent header item");
   });
 
+  it("validates agent asides and removes the renderer with its registration", async () => {
+    expect(() =>
+      evaluatePluginClientBundle("bad", bundle('plugin.addAgentAside({id:"topic",Component:12});')),
+    ).toThrow("not a component");
+    expect(() =>
+      evaluatePluginClientBundle(
+        "duplicate",
+        bundle(
+          'function Component(){}; plugin.addAgentAside({id:"topic",Component}); plugin.addAgentAside({id:"topic",Component});',
+        ),
+      ),
+    ).toThrow("Duplicate agent aside");
+    const plugin = evaluatePluginClientBundle(
+      "topics",
+      bundle('plugin.addAgentAside({id:"topic",Component:function(){return null;}});'),
+    );
+    expect(plugin.agentAsides).toHaveLength(1);
+    await plugin.cleanup();
+    expect(plugin.agentAsides).toHaveLength(0);
+  });
+
   it("releases button registrations when client setup throws", () => {
     let active = 0;
     function addButton() {
@@ -125,6 +149,7 @@ describe("evaluatePluginClientBundle", () => {
           plugin.addSidebarHeaderItem({ id: "main", title: "Main", Component }),
           plugin.addSidebarFooterItem({ id: "status", title: "Status", Component }),
           plugin.addAgentHeaderItem({ id: "owner", Component }),
+          plugin.addAgentAside({ id: "topic", Component }),
           plugin.addWorkspacePanel({ id: "panel", title: "Panel", icon: "Blocks", context: "workspace", Component }),
           plugin.addCommandCenterItem({ id: "command", title: "Command", icon: "Blocks", context: "global", onSelect() {} }),
           plugin.addSlashCommand({ name: "review", description: "Review", argumentHint: "", context: "workspace", onSubmit() {} }),
@@ -157,6 +182,7 @@ describe("evaluatePluginClientBundle", () => {
         plugin.sidebarItems.header,
         plugin.sidebarItems.footer,
         plugin.agentHeaderItems,
+        plugin.agentAsides,
         plugin.workspacePanels,
         plugin.commandCenterItems,
         plugin.clientSlashCommands,
@@ -178,6 +204,7 @@ describe("evaluatePluginClientBundle", () => {
         plugin.sidebarItems.header,
         plugin.sidebarItems.footer,
         plugin.agentHeaderItems,
+        plugin.agentAsides,
         plugin.workspacePanels,
         plugin.commandCenterItems,
         plugin.clientSlashCommands,

@@ -1,4 +1,36 @@
 import { i18n } from "@/i18n/i18next";
+import type { ClientSlashCommand } from "@/client-slash-commands";
+
+interface ClientCommandSubmitInput {
+  command: ClientSlashCommand;
+  onCommand?: (command: ClientSlashCommand) => Promise<void>;
+  beforeCommand?: (command: ClientSlashCommand) => void;
+  clear(): void;
+  setError(message: string | null): void;
+  setProcessing(processing: boolean): void;
+}
+
+/** A rejected local command is consumed without falling through to a provider prompt. */
+export function submitClientSlashCommand(input: ClientCommandSubmitInput): boolean {
+  const { command, onCommand, beforeCommand, clear, setError, setProcessing } = input;
+  if (command.execution !== "immediate" || !onCommand) return false;
+  try {
+    beforeCommand?.(command);
+  } catch (error) {
+    setError(error instanceof Error ? error.message : String(error));
+    return true;
+  }
+  clear();
+  setError(null);
+  setProcessing(true);
+  void onCommand(command)
+    .catch((error) => {
+      console.error("[Composer] Failed to run client slash command:", error);
+      setError(error instanceof Error ? error.message : String(error));
+    })
+    .finally(() => setProcessing(false));
+  return true;
+}
 
 export type AgentInputSubmitResult = "noop" | "queued" | "submitted" | "failed";
 

@@ -10,6 +10,7 @@ import type {
 import type {
   PluginFilePanelContribution as SDKPluginFilePanelContribution,
   PluginAgentHeaderItemContribution,
+  PluginAgentAsideContribution,
   PluginMessageContribution,
   PluginCommandCenterItemContribution as SDKPluginCommandCenterItemContribution,
   PluginClientSlashCommandContribution as SDKPluginClientSlashCommandContribution,
@@ -51,6 +52,7 @@ export interface EvaluatedPlugin {
   surfaces: PluginScreenContribution[];
   settingsScreens: PluginSettingsScreenContribution[];
   agentHeaderItems: PluginAgentHeaderItemContribution[];
+  agentAsides: PluginAgentAsideContribution[];
   messageActions: PluginMessageContribution[];
   messageFooters: PluginMessageContribution[];
   sidebarItems: Record<PluginSidebarSection, PluginSidebarItemContribution[]>;

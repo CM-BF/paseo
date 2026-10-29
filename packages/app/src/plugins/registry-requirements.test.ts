@@ -37,6 +37,9 @@ function registry(version: string) {
         openSurface() {},
         async playAudio() {},
         openPanel() {},
+        async openAgentAside() {
+          return { close() {} };
+        },
         addComposerPill: () => ({ update() {}, remove() {} }),
         addHeaderButton: () => ({ update() {}, remove() {} }),
       };

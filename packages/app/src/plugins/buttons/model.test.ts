@@ -20,6 +20,7 @@ function installation(): InstalledPlugin {
     cleanup: () => undefined,
     settingsScreens: [],
     agentHeaderItems: [],
+    agentAsides: [],
     messageActions: [],
     messageFooters: [],
     surfaces: [],

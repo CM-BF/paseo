@@ -111,6 +111,7 @@ export type PluginClientRuntime = Pick<
   | "openScreen"
   | "openSurface"
   | "openPanel"
+  | "openAgentAside"
   | "addComposerPill"
   | "addHeaderButton"
 > & { hosts: ReturnType<typeof createPluginHosts> };
@@ -129,6 +130,7 @@ export function runPluginClientBundle(
     surfaces: [],
     settingsScreens: [],
     agentHeaderItems: [],
+    agentAsides: [],
     messageActions: [],
     messageFooters: [],
     sidebarItems: { header: [], footer: [] },
@@ -144,6 +146,7 @@ export function runPluginClientBundle(
   };
   const surfaceIds = new Set<string>();
   const agentHeaderItemIds = new Set<string>();
+  const agentAsideIds = new Set<string>();
   const messageActionIds = new Set<string>();
   const messageFooterIds = new Set<string>();
   const settingsScreenIds = new Set<string>();
@@ -316,6 +319,22 @@ export function runPluginClientBundle(
         { id: itemId, Component: contribution.Component },
         () => agentHeaderItemIds.delete(itemId),
       );
+    },
+    addAgentAside(contribution) {
+      const itemId = requireId(contribution.id, "agent aside id");
+      if (agentAsideIds.has(itemId)) throw new Error(`Duplicate agent aside: ${itemId}`);
+      if (!isComponentType(contribution.Component))
+        throw new Error(`Agent aside ${itemId} is not a component`);
+      agentAsideIds.add(itemId);
+      return register(
+        collector.agentAsides,
+        { id: itemId, Component: contribution.Component },
+        () => agentAsideIds.delete(itemId),
+      );
+    },
+    openAgentAside(input) {
+      if (stopped) return Promise.reject(new Error("Plugin client has stopped"));
+      return runtime.openAgentAside(input);
     },
     // COMPAT(pluginSidebarAliases): added in v0.11.0, remove after 2027-03-29
     // Titled by its id; a legacy item pointing at it lends the header its own title instead.
@@ -625,6 +644,7 @@ export function runPluginClientBundle(
     surfaces: collector.surfaces,
     settingsScreens: collector.settingsScreens,
     agentHeaderItems: collector.agentHeaderItems,
+    agentAsides: collector.agentAsides,
     messageActions: collector.messageActions,
     messageFooters: collector.messageFooters,
     sidebarItems: collector.sidebarItems,

@@ -60,6 +60,7 @@ function registry(
         openSettings: () => {},
         playAudio: async () => {},
         openPanel: () => {},
+        openAgentAside: async () => ({ close() {} }),
         addComposerPill: () => ({ update() {}, remove() {} }),
         addHeaderButton: () => ({ update() {}, remove() {} }),
       };

@@ -273,6 +273,7 @@ export interface AgentStreamViewHandle {
 }
 
 export interface AgentStreamViewProps {
+  streamHeader?: React.ReactNode;
   agentId: string;
   serverId?: string;
   context: AgentScreenAgent;
@@ -333,6 +334,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       serverId,
       context,
       streamItems,
+      streamHeader,
       streamHead: providedStreamHead,
       pendingPermissions,
       pendingMessageSubmissions = EMPTY_PENDING_MESSAGE_SUBMISSIONS,
@@ -1224,6 +1226,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             <MessageOuterSpacingProvider disableOuterSpacing>
               <ToolCallExpansionContext.Provider value={toolCallExpansion}>
                 {streamRenderStrategy.render({
+                  streamHeader,
                   readingRowReplacements: presentation.readingRowReplacements,
                   agentId,
                   segments: renderModel.segments,

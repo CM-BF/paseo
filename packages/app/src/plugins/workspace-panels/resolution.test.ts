@@ -18,6 +18,7 @@ function installed(): InstalledPlugin {
     cleanup: () => {},
     settingsScreens: [],
     agentHeaderItems: [],
+    agentAsides: [],
     messageActions: [],
     messageFooters: [],
     surfaces: [],

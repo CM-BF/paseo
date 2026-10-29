@@ -1,5 +1,5 @@
 import type { PluginText } from "../text.js";
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
 import type { PaseoApi } from "@getpaseo/client";
 import type { AgentTimelineItem, JsonValue } from "@getpaseo/protocol/agent-types";
 import type { ZodType, input as ZodInput, output as ZodOutput } from "zod";
@@ -128,6 +128,43 @@ export interface PluginAgentHeaderItemContribution {
   Component: ComponentType<PluginAgentHeaderItemProps>;
 }
 
+export interface PluginAgentAsideConversationProps {
+  /** Rendered at the start of the child's native transcript, inside its scroll container. */
+  streamHeader?: ReactNode;
+}
+
+export interface PluginAgentAsideProps extends PluginNavigableHostProps {
+  readonly parentAgentId: string;
+  readonly agentId: string;
+  /** The child's actual workspace, resolved by the host. */
+  readonly workspaceId: string;
+  readonly params: Readonly<PluginScreenParams>;
+  readonly visible: boolean;
+  readonly focused: boolean;
+  /** Unmount this opening only. Does not stop, archive, or clear either agent. */
+  close(): void;
+  /** Host-owned conversation bound to this child. Render once, inside a flex container. */
+  Conversation: ComponentType<PluginAgentAsideConversationProps>;
+}
+
+export interface PluginAgentAsideContribution {
+  id: string;
+  /** Owns the aside's chrome and close affordance; the host owns the native conversation. */
+  Component: ComponentType<PluginAgentAsideProps>;
+}
+
+export interface PluginOpenAgentAsideInput {
+  id: string;
+  parentAgentId: string;
+  agentId: string;
+  params?: PluginScreenParams;
+}
+
+export interface PluginAgentAsideHandle {
+  /** Idempotent and scoped to this opening. A stale handle cannot close a newer opening. */
+  close(): void;
+}
+
 export interface PluginScreenProps extends PluginSurfaceProps {
   /** The params the screen was opened with; `{}` when none. */
   params: PluginScreenParams;
@@ -249,6 +286,9 @@ export interface PluginClientContext extends PluginCommandCapabilities, PluginCl
   addMessageAction(contribution: PluginMessageContribution): PluginCleanup;
   addMessageFooter(contribution: PluginMessageContribution): PluginCleanup;
   addAgentHeaderItem(contribution: PluginAgentHeaderItemContribution): PluginCleanup;
+  addAgentAside(contribution: PluginAgentAsideContribution): PluginCleanup;
+  /** Opens beside a visible native parent conversation on this installation's host. */
+  openAgentAside(input: PluginOpenAgentAsideInput): Promise<PluginAgentAsideHandle>;
   addAgentPanel(contribution: PluginAgentPanelContribution<PluginText>): PluginCleanup;
   addWorkspacePanel(contribution: PluginWorkspacePanelContribution<PluginText>): PluginCleanup;
   addCommandCenterItem(

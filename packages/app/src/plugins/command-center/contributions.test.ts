@@ -79,6 +79,7 @@ function plugin(onAgentSelect: AgentCommandItem["onSelect"]): InstalledPlugin {
     cleanup: () => {},
     settingsScreens: [],
     agentHeaderItems: [],
+    agentAsides: [],
     messageActions: [],
     messageFooters: [],
     surfaces: [{ id: "main", title: "Main", Component: () => null }],

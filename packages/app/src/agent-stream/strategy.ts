@@ -77,6 +77,8 @@ export interface StreamHistoryRowRevision {
 }
 
 export interface StreamRenderInput {
+  /** Context belonging to the whole conversation; inside the native transcript's scroller. */
+  streamHeader?: ReactNode;
   agentId: string;
   segments: StreamRenderSegments;
   historyRowRevision?: StreamHistoryRowRevision;

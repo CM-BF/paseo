@@ -131,6 +131,56 @@ describe("createWebStreamStrategy", () => {
     vi.restoreAllMocks();
   });
 
+  it("keeps the conversation header inside the transcript before history without assigning a message identity", () => {
+    const strategy = createWebStreamStrategy({ isMobileBreakpoint: true });
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const input: StreamRenderInput = {
+      agentId: "topic-agent",
+      streamHeader: <button type="button">Authoritative root preview</button>,
+      segments: { historyVirtualized: [], historyMounted: [userMessage(1)], liveHead: [] },
+      boundary: { hasVirtualizedHistory: false, hasMountedHistory: true, hasLiveHead: false },
+      renderers: createRenderers(() => {}),
+      listEmptyComponent: null,
+      viewportRef: React.createRef<StreamViewportHandle>(),
+      routeBottomAnchorRequest: null,
+      isAuthoritativeHistoryReady: true,
+      onNearBottomChange() {},
+      onNearHistoryStart: () => true,
+      isLoadingOlderHistory: false,
+      hasOlderHistory: false,
+      olderHistoryProgressKey: null,
+      scrollEnabled: true,
+      listStyle: null,
+      baseListContentContainerStyle: null,
+      forwardListContentContainerStyle: null,
+      contentMaxWidth: DEFAULT_CONTENT_MAX_WIDTH,
+    };
+    act(() => root?.render(strategy.render(input)));
+    const scroller = container.querySelector('[data-testid="agent-chat-scroll"]');
+    const header = scroller?.querySelector('[data-testid="agent-stream-header"]');
+    const row = scroller?.querySelector('[data-history-row-id="message-1"]');
+    expect(header?.textContent).toBe("Authoritative root preview");
+    expect(header?.hasAttribute("data-message-id")).toBe(false);
+    if (!header || !row) throw new Error("Transcript header and row must render");
+    expect(header.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    act(() =>
+      root?.render(
+        strategy.render({
+          ...input,
+          streamHeader: <button type="button">Source unavailable</button>,
+        }),
+      ),
+    );
+    expect(scroller?.querySelector('[data-testid="agent-stream-header"]')?.textContent).toBe(
+      "Source unavailable",
+    );
+    expect(scroller?.querySelector('[data-history-row-id="message-1"]')).toBe(row);
+  });
+
   it.each(["liveHead", "historyMounted"] as const)(
     "keeps one rendered tool row after late prior-turn updates in %s",
     (lane) => {
@@ -253,6 +303,18 @@ describe("createWebStreamStrategy", () => {
   });
 
   it("retains a row's DOM and local state when recent history becomes virtualized", () => {
+    let headerHeight = 160;
+    const originalRect = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: HTMLElement) {
+        const rect = originalRect.call(this);
+        if (this.dataset.testid === "agent-stream-header") {
+          rect.width = 320;
+          rect.height = headerHeight;
+        }
+        return rect;
+      },
+    );
     const strategy = createWebStreamStrategy({ isMobileBreakpoint: true });
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -261,6 +323,7 @@ describe("createWebStreamStrategy", () => {
     const renderRow = (rowItem: StreamItem) => <MeasuredTestRow item={rowItem} />;
     const input: StreamRenderInput = {
       agentId: "agent",
+      streamHeader: <div>Root message</div>,
       segments: { historyVirtualized: [], historyMounted: [item], liveHead: [] },
       boundary: { hasVirtualizedHistory: false, hasMountedHistory: true, hasLiveHead: false },
       renderers: {
@@ -302,10 +365,12 @@ describe("createWebStreamStrategy", () => {
     expect(container.querySelector('[data-history-row-id="message-0"]')).toBe(row);
     expect(row.isConnected).toBe(true);
     expect(row.querySelector("button")!.textContent).toBe("Loaded");
+    headerHeight = 320;
     act(() =>
       root?.render(
         strategy.render({
           ...input,
+          streamHeader: <div>Expanded root message</div>,
           segments: {
             historyVirtualized: [{ ...item, text: "grown" }, userMessage(1)],
             historyMounted: [userMessage(2)],

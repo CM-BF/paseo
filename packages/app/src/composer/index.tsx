@@ -121,7 +121,7 @@ import { resolveActiveSendBehavior } from "./input/state";
 import { useKeyboardActionHandler } from "@/hooks/use-keyboard-action-handler";
 import type { KeyboardActionDefinition } from "@/keyboard/keyboard-action-dispatcher";
 import type { MessageInputKeyboardActionKind } from "@/keyboard/actions";
-import { submitAgentInput } from "@/composer/submit";
+import { submitAgentInput, submitClientSlashCommand } from "@/composer/submit";
 import { ComposerRecall } from "@/composer/recall";
 import { createMessageSubmissionWriter } from "@/composer/submission/writer";
 import { ComposerKeyboardScopeProvider, useComposerKeyboardScope } from "@/composer/keyboard-scope";
@@ -924,6 +924,8 @@ interface ComposerProps {
   isPaneFocused: boolean;
   onSubmitMessage?: (payload: MessagePayload) => Promise<void>;
   onClientSlashCommand?: (command: ClientSlashCommand) => Promise<void>;
+  /** Synchronous admission before any draft, attachment, or focus mutation. */
+  beforeClientSlashCommand?: (command: ClientSlashCommand) => void;
   /** When true, the submit button is enabled even without text or images (e.g. external attachment selected). */
   hasExternalContent?: boolean;
   /** When true, the composer can submit even with no text or attachments. */
@@ -1242,6 +1244,7 @@ function ComposerContentImpl({
   workspaceId,
   onSubmitMessage,
   onClientSlashCommand,
+  beforeClientSlashCommand,
   hasExternalContent = false,
   allowEmptySubmit = false,
   submitButtonAccessibilityLabel,
@@ -1421,33 +1424,26 @@ function ComposerContentImpl({
 
   const runClientSlashCommand = useCallback(
     (command: ClientSlashCommand): boolean => {
-      if (command.execution !== "immediate" || !onClientSlashCommand) {
-        return false;
-      }
-
-      if (blurOnSubmit) {
-        messageInputRef.current?.blur();
-      }
-      clearDraft("sent");
-      replaceUserInput("");
-      setSelectedAttachments([]);
-      resetSuppression();
-      setSendError(null);
-      setIsProcessing(true);
-      void onClientSlashCommand(command)
-        .catch((error) => {
-          console.error("[Composer] Failed to run client slash command:", error);
-          setSendError(error instanceof Error ? error.message : String(error));
-        })
-        .finally(() => {
-          setIsProcessing(false);
-        });
-      return true;
+      return submitClientSlashCommand({
+        command,
+        onCommand: onClientSlashCommand,
+        beforeCommand: beforeClientSlashCommand,
+        clear() {
+          if (blurOnSubmit) messageInputRef.current?.blur();
+          clearDraft("sent");
+          replaceUserInput("");
+          setSelectedAttachments([]);
+          resetSuppression();
+        },
+        setError: setSendError,
+        setProcessing: setIsProcessing,
+      });
     },
     [
       blurOnSubmit,
       clearDraft,
       onClientSlashCommand,
+      beforeClientSlashCommand,
       resetSuppression,
       setSelectedAttachments,
       replaceUserInput,

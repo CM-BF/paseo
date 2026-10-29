@@ -295,6 +295,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     boundary,
     renderers,
     listEmptyComponent,
+    streamHeader,
     viewportRef,
     routeBottomAnchorRequest,
     isAuthoritativeHistoryReady,
@@ -318,6 +319,24 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     [historyMounted, historyVirtualized, inputSegments],
   );
   const isActive = useRetainedPanelActive();
+  const streamHeaderRef = useRef<HTMLDivElement | null>(null);
+  const [streamHeaderHeight, setStreamHeaderHeight] = useState(0);
+  useLayoutEffect(() => {
+    if (!isActive) return;
+    const header = streamHeaderRef.current;
+    if (!header) {
+      setStreamHeaderHeight(0);
+      return;
+    }
+    function measure() {
+      if (header) setStreamHeaderHeight(header.getBoundingClientRect().height);
+    }
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, [isActive, streamHeader]);
+  const virtualizerScrollMargin = VIRTUALIZER_SCROLL_MARGIN_PX + streamHeaderHeight;
   const isActiveRef = useRef(isActive);
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const contentRef = useRef<HTMLElement | null>(null);
@@ -461,7 +480,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     },
     observeElementOffset: observeVirtualOffset,
     rangeExtractor,
-    scrollMargin: VIRTUALIZER_SCROLL_MARGIN_PX,
+    scrollMargin: virtualizerScrollMargin,
     overscan: 8,
   });
   rowVirtualizerRef.current = rowVirtualizer;
@@ -1257,9 +1276,9 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       display: "flex",
       flexDirection: "column",
       width: "100%",
-      transform: `translateY(${start - VIRTUALIZER_SCROLL_MARGIN_PX}px)`,
+      transform: `translateY(${start - virtualizerScrollMargin}px)`,
     }),
-    [],
+    [virtualizerScrollMargin],
   );
   const mountedHistoryRows = useMemo(() => {
     return segments.historyMounted.map((item, index) => (
@@ -1335,6 +1354,11 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         style={scrollContainerStyle}
       >
         <div ref={handleContentRef} style={contentContainerStyle}>
+          {streamHeader != null && (
+            <div ref={streamHeaderRef} data-testid="agent-stream-header">
+              {streamHeader}
+            </div>
+          )}
           {historyStartSlot}
           <div style={streamRowsHostStyle}>
             <div style={virtualRowsContainerStyle} />

@@ -29,6 +29,7 @@ function installation(
     cleanup: () => undefined,
     settingsScreens: [],
     agentHeaderItems: [],
+    agentAsides: [],
     messageActions: [],
     messageFooters: [],
     surfaces: surfaces.map((id) => ({ id, title: id, Component: () => null })),

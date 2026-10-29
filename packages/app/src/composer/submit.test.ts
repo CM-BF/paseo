@@ -1,5 +1,46 @@
 import { describe, expect, it, vi } from "vitest";
-import { submitAgentInput } from "./submit";
+import { submitAgentInput, submitClientSlashCommand } from "./submit";
+import { CLIENT_SLASH_COMMANDS } from "@/client-slash-commands";
+
+it("preserves ordinary local command clearing, pending state and asynchronous errors", async () => {
+  const pending = createDeferredPromise<void>();
+  const clear = vi.fn();
+  const error = vi.fn();
+  const processing = vi.fn();
+  const onCommand = vi.fn(() => pending.promise);
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  expect(
+    submitClientSlashCommand({
+      command: CLIENT_SLASH_COMMANDS[0],
+      onCommand,
+      clear,
+      setError: error,
+      setProcessing: processing,
+    }),
+  ).toBe(true);
+  expect(clear).toHaveBeenCalledOnce();
+  expect(onCommand).toHaveBeenCalledWith(CLIENT_SLASH_COMMANDS[0]);
+  expect(processing).toHaveBeenCalledWith(true);
+  pending.reject(new Error("archive failed"));
+  await pending.promise.catch(() => {});
+  await Promise.resolve();
+  expect(error).toHaveBeenLastCalledWith("archive failed");
+  expect(processing).toHaveBeenLastCalledWith(false);
+  log.mockRestore();
+});
+
+it("leaves unsupported local commands to the existing composer dispatcher without clearing", () => {
+  const clear = vi.fn();
+  expect(
+    submitClientSlashCommand({
+      command: CLIENT_SLASH_COMMANDS[0],
+      clear,
+      setError: vi.fn(),
+      setProcessing: vi.fn(),
+    }),
+  ).toBe(false);
+  expect(clear).not.toHaveBeenCalled();
+});
 
 function createDeferredPromise<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;

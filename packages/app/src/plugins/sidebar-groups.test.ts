@@ -28,6 +28,7 @@ function installed(
     invoke: async () => undefined,
     settingsScreens: [],
     agentHeaderItems: [],
+    agentAsides: [],
     messageActions: [],
     messageFooters: [],
     surfaces: [{ id: "surface", title: "Surface", Component: () => null }],

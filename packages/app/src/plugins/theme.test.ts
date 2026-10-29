@@ -58,6 +58,7 @@ function installed(serverId: string, themes: PluginThemeContribution[]): Install
     invoke: async () => undefined,
     settingsScreens: [],
     agentHeaderItems: [],
+    agentAsides: [],
     messageActions: [],
     messageFooters: [],
     surfaces: [],

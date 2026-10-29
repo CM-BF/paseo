@@ -11,6 +11,7 @@ import { createPluginClientStateSource } from "./client-state/source";
 import type { PluginClientRuntime } from "./evaluate";
 import { createPluginNavigation } from "./navigation";
 import { pluginButtonStore } from "./buttons";
+import { openPluginAgentAside } from "./agent-aside-store";
 import type { InstalledPlugin } from "./types";
 
 export function createPluginClientRuntime(
@@ -27,6 +28,9 @@ export function createPluginClientRuntime(
     i18n: installation.i18n,
     playAudio: createPlayAudio(audio, installation.lifetime.signal),
     hosts: createPluginHosts(getHostRuntimeStore(), installation.lifetime.signal),
+    openAgentAside(input) {
+      return openPluginAgentAside(installation, input);
+    },
     addComposerPill(contribution) {
       return pluginButtonStore.addComposerPill(installation, contribution);
     },

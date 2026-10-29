@@ -104,6 +104,11 @@ import { derivePendingPermissionKey, normalizeAgentSnapshot } from "@/utils/agen
 import { applyLegacyDaemonWorkspaceOwnership } from "@/workspace/legacy-daemon-workspaces";
 import type { WorkspaceFileOpenRequest } from "@/workspace/file-open";
 import { buildDraftAgentSetup, type ClientSlashCommand } from "@/client-slash-commands";
+import { AgentAsideHost, type EmbeddedAgentConversationProps } from "@/plugins/agent-asides";
+import {
+  assertConversationCommandAllowed,
+  useConversationPresentation,
+} from "./conversation-presentation";
 
 interface ChatAgentStateShape {
   serverId: string | null;
@@ -305,6 +310,20 @@ function storeFetchedAgentDetail(input: {
 }
 
 function AgentPanel() {
+  const { serverId, target } = usePaneContext();
+  invariant(target.kind === "agent", "AgentPanel requires agent target");
+  return (
+    <AgentAsideHost
+      serverId={serverId}
+      parentAgentId={target.agentId}
+      NativeConversation={EmbeddedAgentConversation}
+    >
+      <ParentAgentConversation />
+    </AgentAsideHost>
+  );
+}
+
+function ParentAgentConversation() {
   const { serverId, workspaceId, target, openFileInWorkspace } = usePaneContext();
   const { isInteractive } = usePaneFocus();
   invariant(target.kind === "agent", "AgentPanel requires agent target");
@@ -315,6 +334,26 @@ function AgentPanel() {
         serverId={serverId}
         workspaceId={workspaceId}
         agentId={target.agentId}
+        isPaneFocused={isInteractive}
+        onOpenWorkspaceFile={openFileInWorkspace}
+      />
+    </RetainedChatContent>
+  );
+}
+
+function EmbeddedAgentConversation({
+  serverId,
+  workspaceId,
+  agentId,
+}: EmbeddedAgentConversationProps) {
+  const { isInteractive } = usePaneFocus();
+  const { openFileInWorkspace } = usePaneContext();
+  return (
+    <RetainedChatContent>
+      <AgentPanelContent
+        serverId={serverId}
+        workspaceId={workspaceId}
+        agentId={agentId}
         isPaneFocused={isInteractive}
         onOpenWorkspaceFile={openFileInWorkspace}
       />
@@ -1356,6 +1395,7 @@ const AgentStreamSection = memo(function AgentStreamSection({
   toast: ReturnType<typeof useToastHost>["api"];
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
 }) {
+  const { streamHeader } = useConversationPresentation();
   const isCompactFormFactor = useIsCompactFormFactor();
   const hasWorkspaceDiffStat = useWorkspaceHasDiffStat(serverId, workspaceId);
   const hasVisibleComposerTracks =
@@ -1412,6 +1452,7 @@ const AgentStreamSection = memo(function AgentStreamSection({
   return (
     <AgentStreamView
       ref={streamViewRef}
+      streamHeader={streamHeader}
       agentId={agent.id}
       serverId={serverId}
       context={agent}
@@ -1485,7 +1526,7 @@ const AgentComposerSection = memo(function AgentComposerSection({
   );
 });
 
-function ActiveAgentComposer({
+export function ActiveAgentComposer({
   agentId,
   serverId,
   isPaneFocused,
@@ -1516,6 +1557,11 @@ function ActiveAgentComposer({
     { initialIsBelow: isCompactFormFactor },
   );
   const paneContext = usePaneContext();
+  const { embedded } = useConversationPresentation();
+  const beforeClientSlashCommand = useCallback(
+    (command: ClientSlashCommand) => assertConversationCommandAllowed(embedded, command),
+    [embedded],
+  );
   const openInSidePane = useSettings((settings) => settings.openInSidePane);
   const { workspaceId, tabId, retargetCurrentTab } = paneContext;
   const { archiveAgent } = useArchiveAgent();
@@ -1547,6 +1593,7 @@ function ActiveAgentComposer({
 
   const handleClientSlashCommand = useCallback(
     async (command: ClientSlashCommand) => {
+      beforeClientSlashCommand(command);
       const agent = resolveChatAgentFromSession(useSessionStore.getState(), serverId, agentId);
       if (!agent) {
         throw new Error("Agent not found");
@@ -1572,6 +1619,7 @@ function ActiveAgentComposer({
     },
     [
       agentId,
+      beforeClientSlashCommand,
       archiveAgent,
       closeWorkspaceTab,
       hideWorkspaceAgent,
@@ -1598,6 +1646,7 @@ function ActiveAgentComposer({
         attachmentScopeKeys={attachmentScopeKeys}
         onOpenWorkspaceAttachment={handleOpenWorkspaceAttachment}
         onChangeAttachments={agentInputDraft.setAttachments}
+        beforeClientSlashCommand={beforeClientSlashCommand}
         cwd={cwd}
         clearDraft={agentInputDraft.clear}
         editingSession={editingSession}

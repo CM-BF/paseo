@@ -21,6 +21,7 @@ function plugin(input: {
     cleanup: () => {},
     settingsScreens: [],
     agentHeaderItems: [],
+    agentAsides: [],
     messageActions: [],
     messageFooters: [],
     surfaces: [],

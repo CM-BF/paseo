@@ -80,6 +80,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     boundary,
     renderers,
     listEmptyComponent,
+    streamHeader,
     viewportRef,
     routeBottomAnchorRequest,
     isAuthoritativeHistoryReady,
@@ -565,15 +566,18 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   const historyFooterContent = useMemo(() => {
     const isLoadingOperation = isHistoryStartLoadingOperation(historyStartPaginationState);
     return (
-      <View style={historyStartSlotStyle} testID="older-history-slot">
-        {isLoadingOperation ? (
-          <View testID="load-older-history-spinner">
-            <ThemedLoadingSpinner size="small" uniProps={foregroundMutedColorMapping} />
-          </View>
-        ) : null}
-      </View>
+      <Fragment>
+        {streamHeader}
+        <View style={historyStartSlotStyle} testID="older-history-slot">
+          {isLoadingOperation ? (
+            <View testID="load-older-history-spinner">
+              <ThemedLoadingSpinner size="small" uniProps={foregroundMutedColorMapping} />
+            </View>
+          ) : null}
+        </View>
+      </Fragment>
     );
-  }, [historyStartPaginationState]);
+  }, [historyStartPaginationState, streamHeader]);
 
   // RN's FlatList strictMode keeps its internal renderItem wrapper stable when
   // data or the live header changes, preserving the row identities above.
