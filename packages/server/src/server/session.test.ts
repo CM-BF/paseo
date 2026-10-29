@@ -543,85 +543,86 @@ test.each(["cancelled", "changed", "unavailable"] as const)(
   },
 );
 
-test.each([{ status: "accepted" as const, turnId: "turn-A" }, { status: "busy" as const }])(
-  "send-if-idle RPC replays $status only to its requesting source",
-  async (result) => {
-    const directory = mkdtempSync(join(tmpdir(), "paseo-session-idle-send-"));
-    const messages: SessionOutboundMessage[] = [];
-    const targetedMessages: Array<{
-      source: object;
-      message: SessionOutboundMessage;
-    }> = [];
-    const sendAgentMessageIfIdle = vi.fn(async () => result);
-    const first = createSessionForTest({
-      messages,
-      targetedMessages,
-      messageReceipts: new MessageReceipts(directory),
-      agentManager: {
-        getAgent: () => ({ id: "agent", provider: "codex", lifecycle: "idle" }),
-        waitForAgentClose: async () => {},
-        sendAgentMessageIfIdle,
+test.each([
+  { status: "accepted" as const, turnId: "turn-A" },
+  { status: "busy" as const },
+  { status: "unavailable" as const },
+])("send-if-idle RPC replays $status only to its requesting source", async (result) => {
+  const directory = mkdtempSync(join(tmpdir(), "paseo-session-idle-send-"));
+  const messages: SessionOutboundMessage[] = [];
+  const targetedMessages: Array<{
+    source: object;
+    message: SessionOutboundMessage;
+  }> = [];
+  const sendAgentMessageIfIdle = vi.fn(async () => result);
+  const first = createSessionForTest({
+    messages,
+    targetedMessages,
+    messageReceipts: new MessageReceipts(directory),
+    agentManager: {
+      getAgent: () => ({ id: "agent", provider: "codex", lifecycle: "idle" }),
+      waitForAgentClose: async () => {},
+      sendAgentMessageIfIdle,
+    },
+  });
+  const second = createSessionForTest({
+    messages,
+    targetedMessages,
+    messageReceipts: new MessageReceipts(directory),
+    agentManager: { sendAgentMessageIfIdle },
+  });
+  const source = {},
+    retrySource = {};
+  first.updateClientCapabilities({ selective_agent_timeline: true }, source);
+  second.updateClientCapabilities({ selective_agent_timeline: true }, retrySource);
+  const request = {
+    type: "agent.turn.send_if_idle.request" as const,
+    requestId: "first",
+    agentId: "agent",
+    text: "work",
+    messageId: "idle-1",
+  };
+  try {
+    await first.handleMessage(request, source);
+    await second.handleMessage({ ...request, requestId: "retry" }, retrySource);
+    expect(sendAgentMessageIfIdle).toHaveBeenCalledExactlyOnceWith("agent", "work", {
+      clientMessageId: "idle-1",
+    });
+    expect(messages).toEqual([]);
+    expect(targetedMessages).toEqual([
+      {
+        source,
+        message: {
+          type: "agent.turn.send_if_idle.response",
+          payload: {
+            requestId: "first",
+            agentId: "agent",
+            messageId: "idle-1",
+            result,
+            error: null,
+          },
+        },
       },
-    });
-    const second = createSessionForTest({
-      messages,
-      targetedMessages,
-      messageReceipts: new MessageReceipts(directory),
-      agentManager: { sendAgentMessageIfIdle },
-    });
-    const source = {},
-      retrySource = {};
-    first.updateClientCapabilities({ selective_agent_timeline: true }, source);
-    second.updateClientCapabilities({ selective_agent_timeline: true }, retrySource);
-    const request = {
-      type: "agent.turn.send_if_idle.request" as const,
-      requestId: "first",
-      agentId: "agent",
-      text: "work",
-      messageId: "idle-1",
-    };
-    try {
-      await first.handleMessage(request, source);
-      await second.handleMessage({ ...request, requestId: "retry" }, retrySource);
-      expect(sendAgentMessageIfIdle).toHaveBeenCalledExactlyOnceWith("agent", "work", {
-        clientMessageId: "idle-1",
-      });
-      expect(messages).toEqual([]);
-      expect(targetedMessages).toEqual([
-        {
-          source,
-          message: {
-            type: "agent.turn.send_if_idle.response",
-            payload: {
-              requestId: "first",
-              agentId: "agent",
-              messageId: "idle-1",
-              result,
-              error: null,
-            },
+      {
+        source: retrySource,
+        message: {
+          type: "agent.turn.send_if_idle.response",
+          payload: {
+            requestId: "retry",
+            agentId: "agent",
+            messageId: "idle-1",
+            result,
+            error: null,
           },
         },
-        {
-          source: retrySource,
-          message: {
-            type: "agent.turn.send_if_idle.response",
-            payload: {
-              requestId: "retry",
-              agentId: "agent",
-              messageId: "idle-1",
-              result,
-              error: null,
-            },
-          },
-        },
-      ]);
-    } finally {
-      await first.cleanup();
-      await second.cleanup();
-      rmSync(directory, { recursive: true, force: true });
-    }
-  },
-);
+      },
+    ]);
+  } finally {
+    await first.cleanup();
+    await second.cleanup();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 test.each(["accepted", "unavailable", "changed"] as const)(
   "exact-turn RPC persists %s and replays to the requesting source without redelivery",

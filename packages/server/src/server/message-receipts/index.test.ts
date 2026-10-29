@@ -157,7 +157,11 @@ test.each(["accepted", "unavailable", "changed"] as const)(
   },
 );
 
-test.each([{ status: "accepted" as const, turnId: "turn-A" }, { status: "busy" as const }])(
+test.each([
+  { status: "accepted" as const, turnId: "turn-A" },
+  { status: "busy" as const },
+  { status: "unavailable" as const },
+])(
   "send-if-idle persists $status across lost acknowledgements without dispatching again",
   async (result) => {
     const { requests, directory } = await fixture();

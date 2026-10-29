@@ -406,7 +406,7 @@ export interface PaseoAgentHandle {
    */
   reload(options?: { requestId?: string }): Promise<PaseoAgentRefetchResult | null>;
   send(text: string, options?: PaseoAgentSendOptions): Promise<void>;
-  /** Starts a turn only at an idle admission boundary; busy never interrupts or steers. */
+  /** Requires native atomic idle admission; busy/unavailable leave input and permissions untouched. */
   sendIfIdle(
     text: string,
     options?: PaseoAgentSendIfIdleOptions,

@@ -93,13 +93,19 @@ const result = await reviewer.sendIfIdle("Run the next queued check.", {
 if (result.status === "accepted") console.log(result.turnId);
 ```
 
-The daemon checks idleness and reserves the new turn atomically. `busy` means no input was
-sent; active or starting turns, replacement, pending permissions, and archived agents are
-not eligible. It never steers, interrupts, clears permissions, or unarchives the agent.
-The `agentSendIfIdle` capability is required. Acceptance confirms the native turn started,
-not that it finished. For a lost response, retry the same text and message ID: both `busy`
-and `accepted` are durable results. After a confirmed `busy`, a later dispatch attempt needs
-a new message ID. An uncertain receipt must not be automatically resent under a new ID.
+The daemon reserves a foreground slot, then requires the provider to atomically start only
+while its native session is idle. `busy` means no input was sent; active or starting turns,
+replacement and pending permissions are ineligible. `unavailable` also means no input was
+sent: the provider cannot guarantee native idle admission. It never steers, interrupts,
+clears permissions, or unarchives the agent. Archived agents are rejected during preparation.
+The `agentSendIfIdle` host capability does not imply provider support. Current production
+providers, including Codex, do not implement this native guarantee; Codex's ordinary start
+can append to an autonomous native turn and is never used as a fallback.
+
+Acceptance confirms the native turn started, not that it finished. For a lost response,
+retry the same text and message ID: `accepted`, `busy`, and `unavailable` are durable results.
+After a confirmed unsent result, a later dispatch attempt needs a new message ID. An uncertain
+receipt must not be automatically resent under a new ID.
 
 ## Find agents by label
 

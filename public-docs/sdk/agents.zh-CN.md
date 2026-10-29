@@ -90,12 +90,15 @@ const result = await reviewer.sendIfIdle("Run the next queued check.", {
 if (result.status === "accepted") console.log(result.turnId);
 ```
 
-daemon 会在同一次准入操作中检查空闲并预留新轮次。`busy` 表示没有发送输入；正在运行或
-启动、等待替换、存在未处理权限以及已归档的 Agent 均不可接收。此方法不会引导、中断、
-清除权限或取消归档，需要主机支持 `agentSendIfIdle`。`accepted` 返回实际轮次 ID，只确认
-已启动，不代表任务完成。响应丢失时，用同样的文本和消息 ID 重试，`busy` 和 `accepted`
-均会返回原先持久保存的结果。已明确返回 `busy` 后，下次重新尝试派工需用新消息 ID；
-结果不确定时不能换 ID 自动重发。
+daemon 预留前台轮次后，还要求 provider 在原生会话层原子检查空闲并启动。`busy` 表示没有发送
+输入；正在运行或启动、等待替换、存在未处理权限时不可接收。`unavailable` 同样表示未发送，
+原因是 provider 无法保证原生空闲准入。此方法不会引导、中断、清除权限或取消归档；已归档的
+Agent 在准备阶段被拒绝。主机支持 `agentSendIfIdle` 不代表 provider 支持。当前生产 provider
+（包括 Codex）均未实现该原生保证；Codex 普通启动可能追加到原生自动轮次，因此不会回退调用它。
+
+`accepted` 返回实际轮次 ID，只确认已启动，不代表任务完成。响应丢失时，用同样的文本和消息
+ID 重试，`accepted`、`busy` 和 `unavailable` 均返回原先持久保存的结果。明确未发送后，下次
+重新尝试派工需用新消息 ID；结果不确定时不能换 ID 自动重发。
 
 ## 按标签查找 Agent {#find-agents-by-label}
 

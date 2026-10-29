@@ -31,6 +31,26 @@ describe("MockLoadTestAgentClient", () => {
     vi.useRealTimers();
   });
 
+  test("idle admission reserves the native mock turn and does not join an existing one", async () => {
+    const session = await new MockLoadTestAgentClient().createSession({
+      provider: "mock",
+      cwd: process.cwd(),
+      model: "ten-second-stream",
+    });
+    try {
+      const first = session.startTurnIfIdle!("first");
+      const second = session.startTurnIfIdle!("second");
+      await expect(first).resolves.toEqual({ status: "accepted", turnId: expect.any(String) });
+      await expect(second).resolves.toEqual({ status: "busy" });
+      await session.interrupt();
+      const native = await session.startTurn("native successor");
+      await expect(session.startTurnIfIdle!("must not steer")).resolves.toEqual({ status: "busy" });
+      await expect(session.cancelTurn!(native.turnId)).resolves.toEqual({ status: "accepted" });
+    } finally {
+      await session.close();
+    }
+  });
+
   test("exact-turn cancellation leaves a later mock turn running", async () => {
     const session = await new MockLoadTestAgentClient().createSession({
       provider: "mock",

@@ -153,6 +153,12 @@ export class AgentTurnChangedError extends Error {
   }
 }
 
+class IdleTurnAdmissionRejected extends Error {
+  constructor(readonly status: "busy" | "unavailable") {
+    super(`Native idle admission ${status}`);
+  }
+}
+
 export class AgentInstructionsUpdateError extends Error {
   constructor(
     readonly code: "busy" | "permission_pending" | "active_children" | "persistence_unavailable",
@@ -3123,16 +3129,35 @@ export class AgentManager {
     pendingRun: PendingForegroundRun;
     prompt: AgentPromptInput;
     options?: AgentRunOptions;
+    start?: () => Promise<{ turnId: string }>;
   }): Promise<string> {
     const { agent, agentId, pendingRun, prompt, options } = params;
     try {
-      const result = await agent.session.startTurn(prompt, options);
+      const result = params.start
+        ? await params.start()
+        : await agent.session.startTurn(prompt, options);
       if (pendingRun.settled) {
         throw new Error(`Agent ${agentId} run was canceled before its turn started`);
       }
       return result.turnId;
     } catch (error) {
       if (pendingRun.settled) {
+        throw error;
+      }
+      if (params.start) {
+        // A native autonomous turn or permission may have won while admission was
+        // pending. A thrown transport error may also hide an accepted start. Do not
+        // publish a failed turn or finalize either native winner. Release only our
+        // reservation before replaying the provider's actual events.
+        pendingRun.start = {
+          status: "failed",
+          error: error instanceof Error ? error.message : String(error),
+        };
+        this.runs.settleForegroundRun(agentId, pendingRun.token);
+        for (const event of pendingRun.stagedEvents.splice(0)) {
+          this.enqueueSessionEvent(agentId, event);
+        }
+        await this.drainSessionEvents(agentId);
         throw error;
       }
       if (isStaleProviderSessionError(error)) {
@@ -3181,9 +3206,20 @@ export class AgentManager {
     prompt: AgentPromptInput,
     options?: AgentRunOptions,
   ): AsyncGenerator<AgentStreamEvent> {
+    return this.streamAgentWithAdmission(agentId, prompt, options);
+  }
+
+  private streamAgentWithAdmission(
+    agentId: string,
+    prompt: AgentPromptInput,
+    options?: AgentRunOptions,
+    start?: () => Promise<{ turnId: string }>,
+  ): AsyncGenerator<AgentStreamEvent> {
     this.assertRuntimeMutationAvailable(agentId);
-    if (this.collectingRuntimes.has(agentId) || (!this.agents.has(agentId) && this.registry))
+    if (this.collectingRuntimes.has(agentId) || (!this.agents.has(agentId) && this.registry)) {
+      if (start) throw new IdleTurnAdmissionRejected("busy");
       return this.streamAfterRuntimeCollection(agentId, prompt, options);
+    }
 
     const existingAgent = this.requireSessionAgent(agentId);
     this.logger.trace(
@@ -3217,7 +3253,7 @@ export class AgentManager {
 
     const agent = existingAgent;
     const isReplacement = agent.pendingReplacement;
-    agent.lastError = undefined;
+    if (!start) agent.lastError = undefined;
 
     const pendingRun = this.runs.createPendingRun(agentId);
 
@@ -3230,7 +3266,9 @@ export class AgentManager {
         pendingRun,
         prompt,
         options,
+        start,
       });
+      agent.lastError = undefined;
 
       if (isReplacement) {
         agent.pendingReplacement = false;
@@ -3413,12 +3451,14 @@ export class AgentManager {
     }
   }
 
-  /** Starts one foreground turn only if the current runtime is still idle at admission. */
+  /** Requires both the host reservation and the provider's atomic native idle admission. */
   async sendAgentMessageIfIdle(
     agentId: string,
     prompt: AgentPromptInput,
     options?: AgentRunOptions,
-  ): Promise<{ status: "accepted"; turnId: string } | { status: "busy" }> {
+  ): Promise<
+    { status: "accepted"; turnId: string } | { status: "busy" } | { status: "unavailable" }
+  > {
     this.assertRuntimeMutationAvailable(agentId);
     return this.runForegroundMutation(agentId, async () => {
       this.assertRuntimeMutationAvailable(agentId);
@@ -3431,15 +3471,28 @@ export class AgentManager {
         agent.pendingReplacement ||
         agent.lifecycle === "running" ||
         agent.lifecycle === "initializing" ||
+        this.collectingRuntimes.has(agentId) ||
         agent.pendingPermissions.size > 0 ||
         agent.inFlightPermissionResponses.size > 0 ||
         agent.session.getPendingPermissions().length > 0
       )
         return { status: "busy" };
-      // streamAgent reserves its pending run synchronously. No await may separate this
-      // idle check from that reservation; ordinary send/steer/interrupt share this boundary.
-      const iterator = this.streamAgent(agentId, prompt, options);
-      const first = await iterator.next();
+      const startIfIdle = agent.session.startTurnIfIdle;
+      if (!startIfIdle) return { status: "unavailable" };
+      // Reserve synchronously against other host inputs, then use the provider's
+      // atomic condition against autonomous successors that bypass this host queue.
+      const iterator = this.streamAgentWithAdmission(agentId, prompt, options, async () => {
+        const result = await startIfIdle.call(agent.session, prompt, options);
+        if (result.status !== "accepted") throw new IdleTurnAdmissionRejected(result.status);
+        return result;
+      });
+      let first: IteratorResult<AgentStreamEvent>;
+      try {
+        first = await iterator.next();
+      } catch (error) {
+        if (error instanceof IdleTurnAdmissionRejected) return { status: error.status };
+        throw error;
+      }
       if (first.done || first.value.type !== "turn_started" || !first.value.turnId) {
         throw new Error("Agent did not acknowledge a foreground turn");
       }

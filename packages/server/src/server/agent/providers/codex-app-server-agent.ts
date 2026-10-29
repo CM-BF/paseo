@@ -4368,6 +4368,9 @@ export class CodexAppServerAgentSession implements AgentSession {
     });
   }
 
+  // Intentionally no startTurnIfIdle: Codex turn/start can steer a native successor
+  // and has no atomic idle precondition. Host-side snapshots or goal settings cannot
+  // prevent autonomous native work from entering after the host admission check.
   async startTurn(
     prompt: AgentPromptInput,
     options?: AgentRunOptions,

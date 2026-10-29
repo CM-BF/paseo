@@ -126,10 +126,13 @@ registration and persistence; it never means only that a desired prompt was save
 
 `agent.turn.send_if_idle.request` uses the same foreground admission lane to drain events,
 check for active or starting turns, replacement and permissions, and reserve a pending run
-without an intervening await. It starts only that new turn and returns its acknowledged ID;
-a busy runtime receives no prompt. It never falls back to steering or interruption. Durable
-receipts retain both accepted and busy outcomes; an ambiguous native acknowledgement remains
-pending and cannot be replayed. Ordinary sends retain their existing behavior.
+without an intervening await. It then requires the provider's optional `startTurnIfIdle` method
+to enforce the same condition against native autonomous work outside the host queue. Missing
+support returns `unavailable` before input is sent; ordinary start is never a fallback. A native
+rejection releases only the host reservation and preserves any concurrent native turn and
+permission events. Durable receipts retain accepted, busy and unavailable outcomes; ambiguous
+native acknowledgement remains pending and cannot be replayed. Current production providers do
+not implement this guarantee. Ordinary sends retain their existing behavior.
 
 `agent.turn.steer.request` delivers only to its caller-specified Paseo turn. The foreground
 admission lane rechecks that identity after draining Provider events, and Provider adapters check

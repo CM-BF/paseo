@@ -450,6 +450,12 @@ class FakeAgentSession implements AgentSession {
     return { sessionId: this.id, finalText: resultText, timeline, usage };
   }
 
+  async startTurnIfIdle(prompt: AgentPromptInput) {
+    if (this.activeForegroundTurnId || this.pendingPermissions.length)
+      return { status: "busy" as const };
+    return { status: "accepted" as const, ...(await this.startTurn(prompt)) };
+  }
+
   async startTurn(prompt: AgentPromptInput): Promise<{ turnId: string }> {
     if (this.activeForegroundTurnId) {
       throw new Error("A foreground turn is already active");

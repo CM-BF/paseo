@@ -93,6 +93,18 @@ describe("agent instruction updates", () => {
   });
 });
 
+test.each([
+  { status: "accepted", turnId: "native-turn" },
+  { status: "busy" },
+  { status: "unavailable" },
+])("idle send response preserves $status as an explicit outcome", (result) => {
+  const response = {
+    type: "agent.turn.send_if_idle.response",
+    payload: { requestId: "request", agentId: "agent", messageId: "message", result, error: null },
+  };
+  expect(SessionOutboundMessageSchema.parse(response)).toEqual(response);
+});
+
 describe("exact-turn steering", () => {
   const request = {
     type: "agent.turn.steer.request",

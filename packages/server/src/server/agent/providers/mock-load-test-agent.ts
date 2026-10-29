@@ -864,6 +864,12 @@ export class MockLoadTestAgentSession implements AgentSession {
     return turn.completed;
   }
 
+  async startTurnIfIdle(prompt: AgentPromptInput, options?: AgentRunOptions) {
+    if (this.activeTurn || this.getPendingPermissions().length) return { status: "busy" as const };
+    // startTurn reserves activeTurn synchronously, before its first asynchronous work.
+    return { status: "accepted" as const, ...(await this.startTurn(prompt, options)) };
+  }
+
   async startTurn(
     prompt: AgentPromptInput,
     options?: AgentRunOptions,

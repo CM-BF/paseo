@@ -445,37 +445,38 @@ test("send-if-idle rejects unsupported hosts before sending any legacy request",
   await client.close();
 });
 
-test.each([{ status: "accepted", turnId: "turn-A" }, { status: "busy" }])(
-  "send-if-idle returns $status without falling back to send or steer",
-  async (result) => {
-    const { client, ws } = await connectClient({ agentSendIfIdle: true });
-    const before = ws.sent.length;
-    const pending = client.agents.ref("agent").sendIfIdle("work", { messageId: "idle-1" });
-    const request = parseSentSessionMessage(ws.sent.at(-1));
-    expect(request).toEqual({
-      type: "agent.turn.send_if_idle.request",
-      agentId: "agent",
-      text: "work",
-      messageId: "idle-1",
-      requestId: expect.any(String),
-    });
-    ws.message(
-      sessionMessage({
-        type: "agent.turn.send_if_idle.response",
-        payload: {
-          requestId: request.requestId,
-          agentId: "agent",
-          messageId: "idle-1",
-          result,
-          error: null,
-        },
-      }),
-    );
-    await expect(pending).resolves.toEqual(result);
-    expect(ws.sent).toHaveLength(before + 1);
-    await client.close();
-  },
-);
+test.each([
+  { status: "accepted", turnId: "turn-A" },
+  { status: "busy" },
+  { status: "unavailable" },
+])("send-if-idle returns $status without falling back to send or steer", async (result) => {
+  const { client, ws } = await connectClient({ agentSendIfIdle: true });
+  const before = ws.sent.length;
+  const pending = client.agents.ref("agent").sendIfIdle("work", { messageId: "idle-1" });
+  const request = parseSentSessionMessage(ws.sent.at(-1));
+  expect(request).toEqual({
+    type: "agent.turn.send_if_idle.request",
+    agentId: "agent",
+    text: "work",
+    messageId: "idle-1",
+    requestId: expect.any(String),
+  });
+  ws.message(
+    sessionMessage({
+      type: "agent.turn.send_if_idle.response",
+      payload: {
+        requestId: request.requestId,
+        agentId: "agent",
+        messageId: "idle-1",
+        result,
+        error: null,
+      },
+    }),
+  );
+  await expect(pending).resolves.toEqual(result);
+  expect(ws.sent).toHaveLength(before + 1);
+  await client.close();
+});
 
 test("exact-turn steering requires host support without using the legacy send request", async () => {
   const { client, ws } = await connectClient();

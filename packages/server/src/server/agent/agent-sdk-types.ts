@@ -681,6 +681,16 @@ export interface AgentSession {
   readonly initialTimeline?: ImportedTimelineEntry[];
   run(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<AgentRunResult>;
   startTurn(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<{ turnId: string }>;
+  /** Atomically start only when no native turn or permission/plan response is pending.
+   * busy/unavailable must leave input, approvals, and existing turns untouched.
+   * Providers whose normal start may steer an autonomous successor must not fall back
+   * to it. Missing methods mean this stronger admission contract is unavailable. */
+  startTurnIfIdle?(
+    prompt: AgentPromptInput,
+    options?: AgentRunOptions,
+  ): Promise<
+    { status: "accepted"; turnId: string } | { status: "busy" } | { status: "unavailable" }
+  >;
   steerActiveTurn?(prompt: AgentPromptInput, options: SteerActiveTurnOptions): Promise<SteerResult>;
   subscribe(callback: (event: AgentStreamEvent) => void): () => void;
   streamHistory(): AsyncGenerator<AgentStreamEvent>;

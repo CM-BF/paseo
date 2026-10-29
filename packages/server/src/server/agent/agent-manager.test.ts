@@ -1170,6 +1170,9 @@ test("exact-turn cancel waits for its turn to settle without using the unconditi
   const entered = deferred<void>();
   const release = deferred<void>();
   class ExactCancelSession extends SteeringTestSession {
+    async startTurnIfIdle(prompt: AgentPromptInput) {
+      return { status: "accepted" as const, ...(await this.startTurn(prompt)) };
+    }
     async cancelTurn(expectedTurnId: string) {
       expect(expectedTurnId).toBe("active-turn-1");
       entered.resolve();
@@ -1277,14 +1280,40 @@ test("exact-turn cancel does not fall back when provider support is unavailable"
   }
 });
 
+test("send-if-idle rejects providers without native idle admission before starting a turn", async () => {
+  const session = new SteeringTestSession({ provider: "codex", cwd: process.cwd() });
+  const client = new (class extends TestAgentClient {
+    override async createSession() {
+      return session;
+    }
+  })();
+  const manager = new AgentManager({ clients: { codex: client }, logger });
+  const agent = await manager.createAgent({ provider: "codex", cwd: process.cwd() }, undefined, {
+    workspaceId: undefined,
+  });
+  try {
+    await expect(
+      manager.sendAgentMessageIfIdle(agent.id, "must not join native work"),
+    ).resolves.toEqual({
+      status: "unavailable",
+    });
+    expect(session.startCount).toBe(0);
+    expect(session.steerCount).toBe(0);
+    expect(session.interruptCount).toBe(0);
+    expect(manager.getAgent(agent.id)?.activeTurnId).toBeNull();
+  } finally {
+    await manager.closeAgent(agent.id);
+  }
+});
+
 test("send-if-idle reserves the pending start and rejects concurrent input without steering", async () => {
   const entered = deferred<void>();
   const release = deferred<void>();
   class HeldStartSession extends SteeringTestSession {
-    override async startTurn(prompt: AgentPromptInput) {
+    async startTurnIfIdle(prompt: AgentPromptInput) {
       entered.resolve();
       await release.promise;
-      return super.startTurn(prompt);
+      return { status: "accepted" as const, ...(await super.startTurn(prompt)) };
     }
   }
   const session = new HeldStartSession({
@@ -1349,6 +1378,79 @@ test("send-if-idle rechecks after admission instead of using the caller's idle s
     await manager.closeAgent(agent.id);
   }
 });
+
+test.each(["busy", "unavailable", "unknown"] as const)(
+  "send-if-idle preserves a native successor and permission when native admission is %s",
+  async (outcome) => {
+    const entered = deferred<void>();
+    const release = deferred<void>();
+    class NativeAdmissionSession extends SteeringTestSession {
+      async startTurnIfIdle(): Promise<{ status: "busy" } | { status: "unavailable" }> {
+        entered.resolve();
+        await release.promise;
+        if (outcome === "unknown") throw new Error("native admission ACK lost");
+        return { status: outcome };
+      }
+    }
+    const session = new NativeAdmissionSession({ provider: "codex", cwd: process.cwd() });
+    const client = new (class extends TestAgentClient {
+      override async createSession() {
+        return session;
+      }
+    })();
+    const manager = new AgentManager({ clients: { codex: client }, logger });
+    const agent = await manager.createAgent({ provider: "codex", cwd: process.cwd() }, undefined, {
+      workspaceId: undefined,
+    });
+    const events: AgentManagerEvent[] = [];
+    const unsubscribe = manager.subscribe((event) => events.push(event), { replayState: false });
+    const permission = {
+      id: "native-permission",
+      provider: "codex" as const,
+      name: "approval",
+      kind: "tool" as const,
+      input: {},
+    };
+    try {
+      const attempt = manager.sendAgentMessageIfIdle(agent.id, "queued input", {
+        clientMessageId: "idle-attempt",
+      });
+      const result = attempt.catch((error) => error);
+      await entered.promise;
+      session.pushEvent({ type: "turn_started", provider: "codex", turnId: "native-successor" });
+      session.pushEvent({
+        type: "permission_requested",
+        provider: "codex",
+        turnId: "native-successor",
+        request: permission,
+      });
+      release.resolve();
+      if (outcome === "unknown")
+        await expect(result).resolves.toMatchObject({ message: "native admission ACK lost" });
+      else await expect(result).resolves.toEqual({ status: outcome });
+      expect(manager.getAgent(agent.id)?.activeTurnId).toBe("native-successor");
+      expect(manager.getAgent(agent.id)?.activeForegroundTurnId).toBeNull();
+      expect(manager.getAgent(agent.id)?.pendingPermissions.get("native-permission")).toEqual(
+        permission,
+      );
+      expect(manager.hasInFlightRun(agent.id)).toBe(true);
+      expect(
+        events.filter(
+          (event) =>
+            event.type === "agent_stream" &&
+            ["turn_failed", "turn_canceled"].includes(event.event.type),
+        ),
+      ).toEqual([]);
+      expect(session.startPrompts).toEqual([]);
+      expect(session.steerCount).toBe(0);
+      expect(session.interruptCount).toBe(0);
+    } finally {
+      release.resolve();
+      unsubscribe();
+      await manager.closeAgent(agent.id);
+    }
+  },
+);
 
 test("send-if-idle leaves provider permissions untouched", async () => {
   const session = new SteeringTestSession({

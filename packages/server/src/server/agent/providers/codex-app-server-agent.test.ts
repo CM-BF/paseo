@@ -231,6 +231,7 @@ describe("Codex active-turn steering admission", () => {
       initialize: () => ({ userAgent: "codex/0.128.0" }),
     });
     const { session, paseoTurnId } = await startPublicSteeringSession(appServer);
+    expect((session as AgentSession).startTurnIfIdle).toBeUndefined();
     castInternals<{ emitSyntheticPlanApprovalRequest: (planText: string) => void }>(
       session,
     ).emitSyntheticPlanApprovalRequest("Keep this permission");

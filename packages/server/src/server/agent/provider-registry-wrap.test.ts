@@ -21,6 +21,7 @@ type OptionalAgentSessionMethodName = {
 }[keyof AgentSession];
 
 const OPTIONAL_AGENT_SESSION_METHOD_NAMES = [
+  "startTurnIfIdle",
   "steerActiveTurn",
   "cancelTurn",
   "listCommands",
@@ -78,6 +79,11 @@ class FakeSession implements AgentSession {
   async startTurn() {
     this.recordedCalls.push("startTurn");
     return { turnId: "turn-1" };
+  }
+
+  async startTurnIfIdle() {
+    this.recordedCalls.push("startTurnIfIdle");
+    return { status: "busy" as const };
   }
 
   async steerActiveTurn(
@@ -190,6 +196,7 @@ describe("wrapSessionProvider", () => {
     const session = new FakeSession();
     const wrapped = wrapSessionProvider("custom-claude", session);
 
+    await expect(wrapped.startTurnIfIdle!("work")).resolves.toEqual({ status: "busy" });
     await wrapped.steerActiveTurn?.("follow-up", { expectedTurnId: "turn-1" });
     await wrapped.listCommands?.();
     await wrapped.setModel?.("sonnet");
@@ -205,6 +212,7 @@ describe("wrapSessionProvider", () => {
       { prompt: "follow-up", options: { expectedTurnId: "turn-1" } },
     ]);
     expect(session.recordedCalls).toEqual([
+      "startTurnIfIdle",
       "steerActiveTurn",
       "listCommands",
       "setModel",
@@ -246,6 +254,12 @@ describe("wrapSessionProvider", () => {
     const session: AgentSession = new FakeSession();
     session.steerActiveTurn = undefined;
     expect(wrapSessionProvider("custom-claude", session).steerActiveTurn).toBeUndefined();
+  });
+
+  test("does not synthesize idle admission from ordinary startTurn", () => {
+    const session: AgentSession = new FakeSession();
+    session.startTurnIfIdle = undefined;
+    expect(wrapSessionProvider("custom-claude", session).startTurnIfIdle).toBeUndefined();
   });
 
   test("forwards exact cancel to its provider and does not invent a legacy fallback", async () => {

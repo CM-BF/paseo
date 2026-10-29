@@ -2086,6 +2086,7 @@ export type AgentSendIfIdleOptions = z.infer<typeof AgentSendIfIdleOptionsSchema
 export const AgentSendIfIdleResultSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("accepted"), turnId: z.string().min(1) }),
   z.object({ status: z.literal("busy") }),
+  z.object({ status: z.literal("unavailable") }),
 ]);
 export type AgentSendIfIdleResult = z.infer<typeof AgentSendIfIdleResultSchema>;
 export const AgentSendIfIdleRequestMessageSchema = AgentSendIfIdleOptionsSchema.extend({
