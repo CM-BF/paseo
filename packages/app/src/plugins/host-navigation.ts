@@ -21,11 +21,16 @@ export function usePluginHostNavigation(
         openAgent: navigateToAgent,
         openWorkspace: navigateToWorkspace,
         createBrowser: createWorkspaceBrowser,
-        resolveWorkspace: ({ serverId: targetServerId, workspaceId }) =>
-          resolveWorkspaceMapKeyByIdentity({
-            workspaces: useSessionStore.getState().sessions[targetServerId]?.workspaces,
+        resolveWorkspace: ({ serverId: targetServerId, workspaceId }) => {
+          const workspaces = useSessionStore.getState().sessions[targetServerId]?.workspaces;
+          const id = resolveWorkspaceMapKeyByIdentity({
+            workspaces,
             workspaceId,
-          }),
+          });
+          if (!id) return null;
+          const workspace = workspaces?.get(id);
+          return workspace ? { id, root: workspace.workspaceDirectory } : null;
+        },
       }),
     [serverId, beforeNavigate],
   );

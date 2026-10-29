@@ -577,6 +577,13 @@ export default function contribute(client: PluginClientContext) {
 | `params`     | 打开界面时传入的参数，键和值都是字符串。没有参数时为 `{}`。                                                                                                                                                                                                                            |
 | `navigation` | 可选的客户端导航。`openAgent({ agentId, serverId? })` 和 `openWorkspace({ workspaceId, serverId? })` 在 `serverId` 上打开目标，省略时在所选主机上打开。`openBrowser({ url, workspaceId, serverId? })` 仅在 Electron 上可用；见[链接和浏览器](#external-links-and-workspace-browsers)。 |
 
+`navigation.openFile?.({ workspaceId, path, serverId? })` 在所选主机或显式指定的
+`serverId` 上打开 Paseo 文件视图。路径可以是工作区相对路径，也可以是工作区内的绝对路径；
+两者会规范化为相同的文件目标。工作区不存在、路径为空、指向工作区目录本身或位于工作区外时，
+会在导航前抛错。桌面使用 Paseo 文件标签页，紧凑布局沿用现有文件展示方式。
+读取文件失败时由文件视图显示错误；此方法只请求导航，不确认文件已加载。
+旧客户端没有 `navigation?.openFile` 时，隐藏该操作。
+
 路由、标题栏、关闭操作、主机选择器、错误边界和 query client 由 Paseo 负责。界面主体由插件负责。
 
 `addScreen({ id, title, Component })` 注册一个界面。`title` 是界面标题栏的[显示文本](#runtime-translations)，也可以是接收界面参数并返回显示文本的函数。参数或语言变化时，该函数会再次运行。无效标题和空字符串标题会被拒绝。如果标题函数抛出错误或解析为空字符串，会改为显示界面 ID；界面仍然会渲染。

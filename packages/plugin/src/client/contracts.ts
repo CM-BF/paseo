@@ -47,6 +47,12 @@ interface PluginNavigableHostProps extends PluginHostProps {
       readonly workspaceId: string;
       readonly serverId?: string;
     }) => void;
+    /** Opens Paseo's file view for a path inside the workspace; absent on older clients. */
+    readonly openFile?: (input: {
+      readonly workspaceId: string;
+      readonly path: string;
+      readonly serverId?: string;
+    }) => void;
   };
 }
 

@@ -702,6 +702,14 @@ export default function contribute(client: PluginClientContext) {
 | `params`     | The params the screen was opened with, as string keys and values. `{}` when none.                                                                                                                                                                                                                                                 |
 | `navigation` | Optional client navigation. `openAgent({ agentId, serverId? })` and `openWorkspace({ workspaceId, serverId? })` open targets on `serverId`, or on the selected host when omitted. `openBrowser({ url, workspaceId, serverId? })` is available only on Electron; see [links and browsers](#external-links-and-workspace-browsers). |
 
+`navigation.openFile?.({ workspaceId, path, serverId? })` opens Paseo’s file view on the selected
+host, or on `serverId` when provided. It accepts a workspace-relative path or an absolute path
+inside that workspace and normalizes both to the same file target. Missing workspaces, empty
+paths, workspace roots, and paths outside the workspace throw before navigation. Desktop uses
+Paseo’s file tabs; compact layouts use the existing file presentation. File loading errors appear
+in that view. This method requests navigation; it does not confirm that a file was loaded.
+Hide the action when `navigation?.openFile` is absent on an older client.
+
 Paseo owns the route, header, close action, host picker, error boundary, and query client. The plugin owns the screen body.
 
 `addScreen({ id, title, Component })` registers a screen. `title` is the screen header's title: a
