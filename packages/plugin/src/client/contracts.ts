@@ -76,6 +76,8 @@ export interface PluginPopoverProps extends PluginNavigableHostProps {
 }
 
 export interface PluginSidebarItemProps extends PluginNavigableHostProps {
+  /** Focused native agent on this item's host, else null; absent on older clients. */
+  currentAgentId?: string | null;
   /** This plugin's screen open on this item's host, with its params, else null. */
   currentScreen: PluginScreenLocation | null;
   openScreen(input: PluginOpenScreenInput): void;

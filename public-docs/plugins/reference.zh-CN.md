@@ -596,6 +596,7 @@ export default function contribute(client: PluginClientContext) {
 | `theme`, `host`, `layout` | 与 `PluginScreenProps` 中相同。                                                                 |
 | `navigation`              | 与 `PluginScreenProps` 相同的可选导航。默认作用于渲染此项的主机，也可通过 `serverId` 指定主机。 |
 | `currentScreen`           | 在该项所属主机上打开的、此插件的界面的 `{ screenId, params }`，没有时为 `null`。                |
+| `currentAgentId?`         | 该项所属主机上当前聚焦的原生 Agent ID；其他页面或非 Agent 标签页为 `null`，旧客户端没有此字段。 |
 | `openScreen(input)`       | 打开此插件的某个界面：`{ screenId, params? }`。未知的界面 ID 会抛出错误。                       |
 | `openPopover(Content)`    | 在宽布局中把 `Content` 锚定在被按下的行旁边打开，在紧凑布局中以底部面板打开。                   |
 
