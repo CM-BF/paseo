@@ -704,8 +704,9 @@ export default function contribute(client: PluginClientContext) {
 
 `navigation.openFile?.({ workspaceId, path, serverId? })` opens Paseo’s file view on the selected
 host, or on `serverId` when provided. It accepts a workspace-relative path or an absolute path
-inside that workspace and normalizes both to the same file target. Missing workspaces, empty
-paths, workspace roots, and paths outside the workspace throw before navigation. Desktop uses
+inside that workspace and normalizes both to the same file target. Await its promise: a cold
+workspace cache is refreshed on the named host before navigation. A host change, missing workspace,
+empty path, workspace root, or path outside the workspace rejects before navigation. Desktop uses
 Paseo’s file tabs; compact layouts use the existing file presentation. File loading errors appear
 in that view. This method requests navigation; it does not confirm that a file was loaded.
 Hide the action when `navigation?.openFile` is absent on an older client.

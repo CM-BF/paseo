@@ -579,8 +579,9 @@ export default function contribute(client: PluginClientContext) {
 
 `navigation.openFile?.({ workspaceId, path, serverId? })` 在所选主机或显式指定的
 `serverId` 上打开 Paseo 文件视图。路径可以是工作区相对路径，也可以是工作区内的绝对路径；
-两者会规范化为相同的文件目标。工作区不存在、路径为空、指向工作区目录本身或位于工作区外时，
-会在导航前抛错。桌面使用 Paseo 文件标签页，紧凑布局沿用现有文件展示方式。
+两者会规范化为相同的文件目标。请等待返回的 Promise；工作区缓存尚未就绪时，
+会先从指定主机刷新。主机发生变化、工作区不存在、路径为空、指向工作区目录本身或位于工作区外时，
+Promise 会在导航前拒绝。桌面使用 Paseo 文件标签页，紧凑布局沿用现有文件展示方式。
 读取文件失败时由文件视图显示错误；此方法只请求导航，不确认文件已加载。
 旧客户端没有 `navigation?.openFile` 时，隐藏该操作。
 

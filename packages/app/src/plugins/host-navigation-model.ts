@@ -2,10 +2,48 @@ import type { PluginSurfaceProps } from "@getpaseo/plugin/client";
 import type { NavigateToWorkspaceInput } from "@/stores/navigation-active-workspace-store";
 import { isHttpUrl } from "@/utils/http-url";
 import { resolveWorkspaceFilePaths } from "@/workspace/file-open";
+import type { HostRuntimeSnapshot } from "@/runtime/host-runtime";
 
 interface HostWorkspace {
   id: string;
   root: string;
+}
+
+type WorkspaceConnection = Pick<
+  HostRuntimeSnapshot,
+  "client" | "clientGeneration" | "connectionEpoch" | "connectionStatus"
+>;
+
+export interface PluginFileWorkspaceAccess {
+  resolve(): HostWorkspace | null;
+  refresh(): Promise<void>;
+}
+
+/** A cold lookup must not navigate after its host reconnects or its plugin surface closes. */
+export function capturePluginFileWorkspace(input: {
+  isActive(): boolean;
+  connection(): WorkspaceConnection | null;
+  resolve(): HostWorkspace | null;
+  refresh(): Promise<void>;
+}): PluginFileWorkspaceAccess {
+  const captured = input.connection();
+  return {
+    refresh: input.refresh,
+    resolve() {
+      const current = input.connection();
+      const sameConnection =
+        captured &&
+        current &&
+        captured.client === current.client &&
+        captured.clientGeneration === current.clientGeneration &&
+        captured.connectionEpoch === current.connectionEpoch &&
+        captured.connectionStatus === current.connectionStatus;
+      if (!input.isActive() || !sameConnection) {
+        throw new Error("The plugin navigation host changed. Try again.");
+      }
+      return input.resolve();
+    },
+  };
 }
 
 interface HostNavigationOwner {
@@ -14,6 +52,7 @@ interface HostNavigationOwner {
   openAgent(input: { serverId: string; agentId: string }): void;
   openWorkspace(input: NavigateToWorkspaceInput): void;
   resolveWorkspace(input: { serverId: string; workspaceId: string }): HostWorkspace | null;
+  captureFileWorkspace(input: { serverId: string; workspaceId: string }): PluginFileWorkspaceAccess;
   createBrowser(input: { initialUrl: string }): { browserId: string };
 }
 
@@ -30,9 +69,14 @@ export function createPluginHostNavigation(
       owner.beforeNavigate?.();
       owner.openWorkspace({ serverId: targetServerId ?? serverId, workspaceId });
     },
-    openFile: ({ workspaceId, path, serverId: targetServerId }) => {
+    openFile: async ({ workspaceId, path, serverId: targetServerId }) => {
       const destinationServerId = targetServerId ?? serverId;
-      const workspace = owner.resolveWorkspace({ serverId: destinationServerId, workspaceId });
+      const access = owner.captureFileWorkspace({ serverId: destinationServerId, workspaceId });
+      let workspace = access.resolve();
+      if (!workspace) {
+        await access.refresh();
+        workspace = access.resolve();
+      }
       if (!workspace) throw new Error("Workspace is unavailable on the requested host.");
       const paths = resolveWorkspaceFilePaths({ path, workspaceRoot: workspace.root });
       if (!paths?.relativePath) throw new Error("File path must be inside the workspace.");
