@@ -1,4 +1,5 @@
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { PluginAgentHeaderItems } from "@/plugins/agent-header-items";
 import React, {
   Fragment,
   useCallback,
@@ -1056,6 +1057,25 @@ function ResolvedWorkspaceDesktopTabsRow({
   const isCompact = useIsCompactFormFactor();
   const newTabKeys = useShortcutKeys("workspace-tab-new");
   const [tabsContainerWidth, setTabsContainerWidth] = useState<number>(0);
+  const [headerWidths, setHeaderWidths] = useState(() => new Map<string, number>());
+  const activeHeaderWidth = tabs.reduce(
+    (total, item) =>
+      total +
+      (item.isActive && item.tab.target.kind === "agent"
+        ? (headerWidths.get(item.tab.key) ?? 0)
+        : 0),
+    0,
+  );
+  const handleHeaderLayout = useCallback((key: string, event: LayoutChangeEvent) => {
+    const width = Math.ceil(event.nativeEvent.layout.width);
+    if (!Number.isFinite(width) || width < 0) return;
+    setHeaderWidths((current) => {
+      if (current.get(key) === width) return current;
+      const next = new Map(current);
+      next.set(key, width);
+      return next;
+    });
+  }, []);
   const tabsScrollRef = useRef<ScrollView>(null);
   const [exitFocusModeWidth, setExitFocusModeWidth] = useState<number>(0);
   const tabScrollBoundary = useHorizontalScrollBoundary();
@@ -1078,6 +1098,7 @@ function ResolvedWorkspaceDesktopTabsRow({
       actionsReservedWidth: Math.max(
         0,
         DEFAULT_INLINE_ADD_BUTTON_RESERVED_WIDTH +
+          activeHeaderWidth +
           (focusModeEnabled ? exitFocusModeWidth : 0) +
           (showPaneSplitActions ? PANE_SPLIT_ACTIONS_RESERVED_WIDTH : 0) +
           (showPaneMaximizeAction ? PANE_MAXIMIZE_ACTION_RESERVED_WIDTH : 0),
@@ -1091,7 +1112,13 @@ function ResolvedWorkspaceDesktopTabsRow({
       tabHorizontalPadding: TAB_CHIP_HORIZONTAL_PADDING,
       closeButtonWidth: TAB_CLOSE_BUTTON_RESERVED_WIDTH,
     }),
-    [exitFocusModeWidth, focusModeEnabled, showPaneMaximizeAction, showPaneSplitActions],
+    [
+      activeHeaderWidth,
+      exitFocusModeWidth,
+      focusModeEnabled,
+      showPaneMaximizeAction,
+      showPaneSplitActions,
+    ],
   );
 
   const panePanelKinds = useMemo(() => tabs.map(({ tab }) => tab.kind), [tabs]);
@@ -1141,6 +1168,10 @@ function ResolvedWorkspaceDesktopTabsRow({
   const tabLabelSignature = useMemo(() => workspaceTabLabelSignature(tabLabels), [tabLabels]);
   const currentTabLabelKeys = useMemo(() => new Set(tabLabels.map(({ key }) => key)), [tabLabels]);
   useEffect(() => {
+    setHeaderWidths((current) => {
+      if ([...current.keys()].every((key) => currentTabLabelKeys.has(key))) return current;
+      return new Map([...current].filter(([key]) => currentTabLabelKeys.has(key)));
+    });
     setLabelMeasurements((current) => {
       const removedKeys = [...current.keys()].filter((key) => !currentTabLabelKeys.has(key));
       if (removedKeys.length === 0) {
@@ -1322,11 +1353,22 @@ function ResolvedWorkspaceDesktopTabsRow({
           dragHandleProps={dragHandleProps}
           showDropIndicatorBefore={showDropIndicatorBefore}
           showDropIndicatorAfter={showDropIndicatorAfter}
+          onHeaderLayout={handleHeaderLayout}
+          showHeaderItem={tabs.some(
+            (current) =>
+              current.isActive &&
+              current.tab.key === item.tab.key &&
+              current.tab.target.kind === "agent" &&
+              item.tab.target.kind === "agent" &&
+              current.tab.target.agentId === item.tab.target.agentId,
+          )}
         />
       );
     },
     [
       activeDragTabId,
+      handleHeaderLayout,
+      tabs,
       isFocused,
       layout.closeButtonPolicy,
       layout.items,
@@ -1480,6 +1522,8 @@ function ResolvedDesktopTabChip({
   dragHandleProps,
   showDropIndicatorBefore,
   showDropIndicatorAfter,
+  onHeaderLayout,
+  showHeaderItem,
 }: {
   serverId: string;
   workspaceId: string;
@@ -1508,9 +1552,15 @@ function ResolvedDesktopTabChip({
   dragHandleProps: DraggableListDragHandleProps | undefined;
   showDropIndicatorBefore: boolean;
   showDropIndicatorAfter: boolean;
+  onHeaderLayout: (key: string, event: LayoutChangeEvent) => void;
+  showHeaderItem: boolean;
 }) {
   const { t } = useTranslation();
   const presentation = item.presentation;
+  const handleHeaderLayout = useCallback(
+    (event: LayoutChangeEvent) => onHeaderLayout(item.tab.key, event),
+    [item.tab.key, onHeaderLayout],
+  );
   const resolvedTab = useMemo(
     () =>
       buildWorkspaceDesktopTabActions({
@@ -1559,7 +1609,7 @@ function ResolvedDesktopTabChip({
       : rawTooltipLabel;
 
   return (
-    <View style={styles.tabSlot}>
+    <View style={[styles.tabSlot, styles.tabWithHeader]}>
       {showDropIndicatorBefore ? (
         <View style={[styles.tabDropIndicator, styles.tabDropIndicatorBefore]} />
       ) : null}
@@ -1585,6 +1635,20 @@ function ResolvedDesktopTabChip({
         onCloseTab={onCloseTab}
         dragHandleProps={dragHandleProps}
       />
+      {showHeaderItem && item.tab.target.kind === "agent" ? (
+        <View
+          style={styles.agentHeaderItem}
+          onLayout={handleHeaderLayout}
+          testID={`agent-header-${item.tab.target.agentId}`}
+        >
+          <PluginAgentHeaderItems
+            key={`${serverId}:${workspaceId}:${item.tab.target.agentId}`}
+            serverId={serverId}
+            workspaceId={workspaceId}
+            agentId={item.tab.target.agentId}
+          />
+        </View>
+      ) : null}
       {showDropIndicatorAfter ? (
         <View style={[styles.tabDropIndicator, styles.tabDropIndicatorAfter]} />
       ) : null}
@@ -1593,6 +1657,8 @@ function ResolvedDesktopTabChip({
 }
 
 const styles = StyleSheet.create((theme) => ({
+  tabWithHeader: { flexDirection: "row", alignItems: "center" },
+  agentHeaderItem: { maxWidth: 200, flexShrink: 0 },
   tabsContainer: {
     minWidth: 0,
     height: WORKSPACE_SECONDARY_HEADER_HEIGHT,

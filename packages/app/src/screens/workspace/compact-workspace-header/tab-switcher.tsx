@@ -1,4 +1,5 @@
 import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { PluginAgentHeaderItems } from "@/plugins/agent-header-items";
 import { Keyboard, Pressable, Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { SquarePen, SquareTerminal } from "lucide-react-native";
@@ -324,6 +325,7 @@ export const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitch
   );
 
   const tabByKey = useMemo(() => new Map(tabs.map((tab) => [tab.key, tab])), [tabs]);
+  const currentTarget = tabByKey.get(activeTabKey)?.target;
   const triggerStyle = useIconButtonChromeStyle({ size: "large" });
   const [isOpen, setIsOpen] = useState(false);
   const anchorRef = useRef<View>(null);
@@ -454,7 +456,14 @@ export const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitch
           <Text style={styles.tabCountText}>{tabs.length}</Text>
         </View>
       </Pressable>
-
+      {currentTarget?.kind === "agent" ? (
+        <PluginAgentHeaderItems
+          key={`${normalizedServerId}:${normalizedWorkspaceId}:${currentTarget.agentId}`}
+          serverId={normalizedServerId}
+          workspaceId={normalizedWorkspaceId}
+          agentId={currentTarget.agentId}
+        />
+      ) : null}
       <Combobox
         options={tabSwitcherOptions}
         value={activeTabKey}

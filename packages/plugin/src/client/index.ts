@@ -1,5 +1,7 @@
 export type {
   PluginHostProps,
+  PluginAgentHeaderItemProps,
+  PluginAgentHeaderItemContribution,
   PluginTab,
   PluginPanelProps,
   PluginWorkspacePanelParams,

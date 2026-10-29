@@ -57,6 +57,7 @@ function installed(serverId: string, themes: PluginThemeContribution[]): Install
     paseo: {} as InstalledPlugin["paseo"],
     invoke: async () => undefined,
     settingsScreens: [],
+    agentHeaderItems: [],
     surfaces: [],
     sidebarItems: { header: [], footer: [] },
     legacySidebarItems: [],

@@ -17,6 +17,7 @@ function installed(): InstalledPlugin {
     invoke: async () => undefined,
     cleanup: () => {},
     settingsScreens: [],
+    agentHeaderItems: [],
     surfaces: [],
     sidebarItems: { header: [], footer: [] },
     legacySidebarItems: [],

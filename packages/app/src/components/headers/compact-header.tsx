@@ -78,7 +78,7 @@ export function CompactHeader({
               subtitle={subtitle}
             />
           </View>
-          {actions ? <View style={styles.island}>{actions}</View> : null}
+          {actions ? <View style={[styles.island, styles.actionsIsland]}>{actions}</View> : null}
         </View>
       </View>
     </IconButtonChromeProvider>
@@ -157,6 +157,11 @@ const styles = StyleSheet.create((theme) => ({
   island: {
     flexDirection: "row",
     alignItems: "center",
+  },
+  actionsIsland: {
+    // Let self-sized contributions shrink before pushing the fixed navigation controls offscreen.
+    flexShrink: 1,
+    minWidth: 0,
   },
   title: {
     fontSize: theme.fontSize.base,

@@ -30,6 +30,23 @@ function bundle(body: string): string {
 }
 
 describe("evaluatePluginClientBundle", () => {
+  it("validates agent header item identity and rejects duplicate or non-component entries", () => {
+    expect(() =>
+      evaluatePluginClientBundle(
+        "bad-header",
+        bundle('plugin.addAgentHeaderItem({ id: "owner", Component: 12 });'),
+      ),
+    ).toThrow("not a component");
+    expect(() =>
+      evaluatePluginClientBundle(
+        "duplicate-header",
+        bundle(
+          'function Component() { return null; } plugin.addAgentHeaderItem({id:"owner",Component}); plugin.addAgentHeaderItem({id:"owner",Component});',
+        ),
+      ),
+    ).toThrow("Duplicate agent header item");
+  });
+
   it("releases button registrations when client setup throws", () => {
     let active = 0;
     function addButton() {
@@ -78,6 +95,7 @@ describe("evaluatePluginClientBundle", () => {
           plugin.addSettingsScreen({ id: "display", title: "Display", icon: "Settings", Component }),
           plugin.addSidebarHeaderItem({ id: "main", title: "Main", Component }),
           plugin.addSidebarFooterItem({ id: "status", title: "Status", Component }),
+          plugin.addAgentHeaderItem({ id: "owner", Component }),
           plugin.addWorkspacePanel({ id: "panel", title: "Panel", icon: "Blocks", context: "workspace", Component }),
           plugin.addCommandCenterItem({ id: "command", title: "Command", icon: "Blocks", context: "global", onSelect() {} }),
           plugin.addSlashCommand({ name: "review", description: "Review", argumentHint: "", context: "workspace", onSubmit() {} }),
@@ -109,6 +127,7 @@ describe("evaluatePluginClientBundle", () => {
         plugin.settingsScreens,
         plugin.sidebarItems.header,
         plugin.sidebarItems.footer,
+        plugin.agentHeaderItems,
         plugin.workspacePanels,
         plugin.commandCenterItems,
         plugin.clientSlashCommands,
@@ -129,6 +148,7 @@ describe("evaluatePluginClientBundle", () => {
         plugin.settingsScreens,
         plugin.sidebarItems.header,
         plugin.sidebarItems.footer,
+        plugin.agentHeaderItems,
         plugin.workspacePanels,
         plugin.commandCenterItems,
         plugin.clientSlashCommands,

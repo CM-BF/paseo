@@ -1574,6 +1574,28 @@ Paseo 负责。它不会等待 `onSubmit`，也不会显示进行中的状态；
 优先级依次是内置客户端命令、插件命令、Provider 命令。优先级较低的冲突命令会被省略。内置别名也会占用
 它们的名称。插件之间发生冲突时，按稳定的目录顺序排在前面的插件胜出。Composer 中有附件时，命令不会运行。
 
+## Agent 标题附加内容 {#agent-header-items}
+
+`client.addAgentHeaderItem({ id, Component })` 在当前 Agent 标题旁渲染自定义内容，返回幂等
+移除函数。组件接收 `PluginAgentHeaderItemProps`：`host`、`workspaceId`、`agentId`、
+`theme`、`layout` 和可选的 `navigation`。
+
+```tsx
+const remove = client.addAgentHeaderItem?.({
+  id: "owner",
+  Component: AgentOwner,
+});
+```
+
+桌面显示在活动 Agent 标签之后，紧凑布局显示在当前标签切换入口旁，弹出会话则显示在
+最上层 sheet 的 Agent 标题后。工作区标题和非活动标签不展示。切换主机、工作区或 Agent
+时，组件会重新挂载，导航也限制在相应主机。普通 Agent 可返回 `null`；需要服务端归属
+信息时，使用传入的身份查询并校验。宿主不添加按钮外观，多项内容共享最大 200 点宽的
+横排空间。桌面为实际测得的宽度预留空间，保留标签点击范围、关闭、拖动和溢出行为。
+组件出错时不显示该项。
+
+旧客户端没有此注册方法，调用前检测方法是否存在，缺失时省略入口。
+
 ## 标题栏按钮 {#header-buttons}
 
 试试[按钮示例](https://github.com/getpaseo/paseo/tree/main/plugin-examples/buttons)，它在标题栏和

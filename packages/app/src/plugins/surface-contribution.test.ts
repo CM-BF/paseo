@@ -28,6 +28,7 @@ function installation(
     invoke: async () => undefined,
     cleanup: () => undefined,
     settingsScreens: [],
+    agentHeaderItems: [],
     surfaces: surfaces.map((id) => ({ id, title: id, Component: () => null })),
     sidebarItems: { header: [], footer: [] },
     legacySidebarItems: sidebarItems.map((item) => ({

@@ -1867,6 +1867,29 @@ Precedence is built-in client commands, plugin commands, then provider commands.
 collision is omitted. Built-in aliases also reserve their names. The first plugin in stable catalog
 order wins a collision between plugins. Commands do not run while the composer has attachments.
 
+## Agent header items
+
+`client.addAgentHeaderItem({ id, Component })` contributes custom content next to the current
+agent's title. It returns an idempotent remover. `Component` receives `PluginAgentHeaderItemProps`:
+`host`, `workspaceId`, `agentId`, `theme`, `layout`, and optional `navigation`.
+
+```tsx
+const remove = client.addAgentHeaderItem?.({
+  id: "owner",
+  Component: AgentOwner,
+});
+```
+
+The app renders it after the active agent tab on desktop, beside the current tab switcher on
+compact layouts, and after the agent title in the top sheet. It never attaches to a workspace
+title or an inactive tab. The host scopes navigation and remounts the component when the host,
+workspace or agent changes. Return `null` for ordinary agents, and validate any server-owned
+relationship using the supplied identity. Content has no button chrome and shares a maximum
+200-point-wide row. Desktop layout reserves its measured width without changing tab hitboxes,
+close controls, drag handles or overflow behavior. A failed item renders nothing.
+
+Older clients do not expose this registration method; feature-detect it and omit the accessory.
+
 ## Header buttons
 
 Try the [button example](https://github.com/getpaseo/paseo/tree/main/plugin-examples/buttons) for

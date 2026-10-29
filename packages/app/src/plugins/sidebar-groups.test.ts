@@ -27,6 +27,7 @@ function installed(
     paseo: {} as InstalledPlugin["paseo"],
     invoke: async () => undefined,
     settingsScreens: [],
+    agentHeaderItems: [],
     surfaces: [{ id: "surface", title: "Surface", Component: () => null }],
     sidebarItems: {
       header: [{ id: contributionId, title: "Example", Component: () => null }],

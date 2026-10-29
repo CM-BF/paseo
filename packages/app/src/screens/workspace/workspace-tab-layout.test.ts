@@ -25,6 +25,24 @@ const metrics = {
 };
 
 describe("computeWorkspaceTabLayout", () => {
+  it("reserves the active agent accessory without shrinking tab hitboxes below their minimum", () => {
+    const without = computeWorkspaceTabLayout({
+      viewportWidth: 404,
+      tabLabelWidths: [98, 98, 98, 98],
+      metrics,
+      compact: false,
+    });
+    const withHeader = computeWorkspaceTabLayout({
+      viewportWidth: 404,
+      tabLabelWidths: [98, 98, 98, 98],
+      metrics: { ...metrics, actionsReservedWidth: metrics.actionsReservedWidth + 96 },
+      compact: false,
+    });
+    expect(without.requiresHorizontalScrollFallback).toBe(false);
+    expect(withHeader.requiresHorizontalScrollFallback).toBe(true);
+    expect(withHeader.items.every((item) => item.width >= metrics.minTabWidth)).toBe(true);
+  });
+
   it("keeps each tab at its natural content width when space is available", () => {
     const result = computeWorkspaceTabLayout({
       viewportWidth: 1200,

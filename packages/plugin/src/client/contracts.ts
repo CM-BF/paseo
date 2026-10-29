@@ -71,6 +71,18 @@ export interface PluginScreenLocation {
 
 export interface PluginSurfaceProps extends PluginNavigableHostProps {}
 
+/** Rendered beside the current agent's title, never the workspace title. */
+export interface PluginAgentHeaderItemProps extends PluginNavigableHostProps {
+  workspaceId: string;
+  agentId: string;
+}
+
+export interface PluginAgentHeaderItemContribution {
+  id: string;
+  /** Return null when this agent has no accessory. Owns its content, without button chrome. */
+  Component: ComponentType<PluginAgentHeaderItemProps>;
+}
+
 export interface PluginScreenProps extends PluginSurfaceProps {
   /** The params the screen was opened with; `{}` when none. */
   params: PluginScreenParams;
@@ -189,6 +201,7 @@ export interface PluginClientContext extends PluginCommandCapabilities, PluginCl
   addScreen(contribution: PluginScreenContribution<PluginText>): PluginCleanup;
   addSidebarHeaderItem(contribution: PluginSidebarItemContribution<PluginText>): PluginCleanup;
   addSidebarFooterItem(contribution: PluginSidebarItemContribution<PluginText>): PluginCleanup;
+  addAgentHeaderItem(contribution: PluginAgentHeaderItemContribution): PluginCleanup;
   addAgentPanel(contribution: PluginAgentPanelContribution<PluginText>): PluginCleanup;
   addWorkspacePanel(contribution: PluginWorkspacePanelContribution<PluginText>): PluginCleanup;
   addCommandCenterItem(

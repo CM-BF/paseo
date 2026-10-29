@@ -28,6 +28,7 @@ import { useWorkspaceLayoutStore, type SheetTab } from "@/stores/workspace-layou
 import { workspaceTabTargetsEqual } from "@/workspace-tabs/identity";
 import type { WorkspaceTabTarget } from "@/workspace-tabs/model";
 import { useSheetPaneHost } from "./host";
+import { PluginAgentHeaderItems } from "@/plugins/agent-header-items";
 
 function PanelIcon({
   icon: Icon,
@@ -87,6 +88,15 @@ export function SheetPane({ sheet, onClose, onBack, opener = null, isTop }: Shee
   const header = useMemo<SheetHeader>(
     () => ({
       title: descriptor.label,
+      titleAccessory:
+        isTop && tab.target.kind === "agent" ? (
+          <PluginAgentHeaderItems
+            key={`${host.serverId}:${host.workspaceId}:${tab.target.agentId}`}
+            serverId={host.serverId}
+            workspaceId={host.workspaceId}
+            agentId={tab.target.agentId}
+          />
+        ) : undefined,
       leading: <ThemedPanelIcon icon={descriptor.icon} size={16} />,
       back: onBack ? { onPress: onBack } : undefined,
       // The sheet is for looking; the full-screen glyph takes the tab out of the sheet and into
@@ -100,7 +110,18 @@ export function SheetPane({ sheet, onClose, onBack, opener = null, isTop }: Shee
         />
       ) : undefined,
     }),
-    [descriptor.icon, descriptor.label, handleOpenAsTab, onBack, sheet.policy.openAsTab, t],
+    [
+      descriptor.icon,
+      descriptor.label,
+      handleOpenAsTab,
+      onBack,
+      sheet.policy.openAsTab,
+      t,
+      isTop,
+      tab.target,
+      host.serverId,
+      host.workspaceId,
+    ],
   );
 
   const tabDescriptor = useMemo<WorkspaceTabDescriptor>(

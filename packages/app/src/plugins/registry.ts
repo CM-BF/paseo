@@ -103,6 +103,7 @@ export class PluginRegistry {
           cleanup: () => undefined,
           surfaces: [],
           settingsScreens: [],
+          agentHeaderItems: [],
           sidebarItems: { header: [], footer: [] },
           legacySidebarItems: [],
           filePanels: [],

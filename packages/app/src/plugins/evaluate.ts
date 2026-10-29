@@ -128,6 +128,7 @@ export function runPluginClientBundle(
   const collector: Omit<EvaluatedPlugin, "id" | "cleanup"> = {
     surfaces: [],
     settingsScreens: [],
+    agentHeaderItems: [],
     sidebarItems: { header: [], footer: [] },
     legacySidebarItems: [],
     filePanels: [],
@@ -140,6 +141,7 @@ export function runPluginClientBundle(
     timelineRenderers: [],
   };
   const surfaceIds = new Set<string>();
+  const agentHeaderItemIds = new Set<string>();
   const settingsScreenIds = new Set<string>();
   const sidebarItemIds: Record<PluginSidebarSection, Set<string>> = {
     header: new Set(),
@@ -274,6 +276,18 @@ export function runPluginClientBundle(
     },
     addSidebarFooterItem(contribution: PluginSidebarItemContribution) {
       return addSidebarItem("footer", contribution);
+    },
+    addAgentHeaderItem(contribution) {
+      const itemId = requireId(contribution.id, "agent header item id");
+      if (agentHeaderItemIds.has(itemId)) throw new Error(`Duplicate agent header item: ${itemId}`);
+      if (!isComponentType(contribution.Component))
+        throw new Error(`Agent header item ${itemId} is not a component`);
+      agentHeaderItemIds.add(itemId);
+      return register(
+        collector.agentHeaderItems,
+        { id: itemId, Component: contribution.Component },
+        () => agentHeaderItemIds.delete(itemId),
+      );
     },
     // COMPAT(pluginSidebarAliases): added in v0.11.0, remove after 2027-03-29
     // Titled by its id; a legacy item pointing at it lends the header its own title instead.
@@ -582,6 +596,7 @@ export function runPluginClientBundle(
     cleanup,
     surfaces: collector.surfaces,
     settingsScreens: collector.settingsScreens,
+    agentHeaderItems: collector.agentHeaderItems,
     sidebarItems: collector.sidebarItems,
     legacySidebarItems: collector.legacySidebarItems,
     filePanels: collector.filePanels,

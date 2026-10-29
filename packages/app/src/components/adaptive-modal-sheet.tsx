@@ -66,6 +66,7 @@ export interface SheetHeaderBack {
 
 export interface SheetHeader {
   title: string;
+  titleAccessory?: ReactNode;
   subtitle?: ReactNode;
   back?: SheetHeaderBack;
   leading?: ReactNode;
@@ -126,6 +127,15 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     gap: theme.spacing[1],
     minWidth: 0,
+  },
+  titleWithAccessory: {
+    flexDirection: "row",
+    alignItems: "center",
+    minWidth: 0,
+  },
+  accessoryTitle: {
+    flex: 0,
+    flexShrink: 1,
   },
   title: {
     fontSize: theme.fontSize.base,
@@ -398,9 +408,18 @@ export function SheetHeaderView({
         ) : null}
         {header.leading ? <View style={styles.headerLeadingSlot}>{header.leading}</View> : null}
         <View style={styles.headerTitleGroup}>
-          <Text style={titleStyle} numberOfLines={1}>
-            {header.title}
-          </Text>
+          {header.titleAccessory ? (
+            <View style={styles.titleWithAccessory}>
+              <Text style={[titleStyle, styles.accessoryTitle]} numberOfLines={1}>
+                {header.title}
+              </Text>
+              {header.titleAccessory}
+            </View>
+          ) : (
+            <Text style={titleStyle} numberOfLines={1}>
+              {header.title}
+            </Text>
+          )}
           {header.subtitle}
         </View>
         {header.actions ? <View style={styles.headerActions}>{header.actions}</View> : null}
@@ -465,9 +484,18 @@ export function InlineHeaderView({ header }: { header: SheetHeader }) {
             </Pressable>
           ) : null}
           {header.leading ? <View style={styles.headerLeadingSlot}>{header.leading}</View> : null}
-          <Text style={styles.inlineTitle} numberOfLines={1}>
-            {header.title}
-          </Text>
+          {header.titleAccessory ? (
+            <View style={[styles.headerTitleGroup, styles.titleWithAccessory]}>
+              <Text style={[styles.inlineTitle, styles.accessoryTitle]} numberOfLines={1}>
+                {header.title}
+              </Text>
+              {header.titleAccessory}
+            </View>
+          ) : (
+            <Text style={styles.inlineTitle} numberOfLines={1}>
+              {header.title}
+            </Text>
+          )}
           {header.actions ? <View style={styles.headerActions}>{header.actions}</View> : null}
         </View>
       ) : null}
