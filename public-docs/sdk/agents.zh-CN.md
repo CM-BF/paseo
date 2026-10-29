@@ -35,6 +35,45 @@ console.log(result.status, result.lastMessage);
 
 超时不会取消 Agent。
 
+## 查询创建结果，避免重发首条输入 {#recover-a-creation-without-resending}
+
+派工前持久保存创建 key、agentId、clientMessageId 和完整输入。新建会话需要独占首次派工时，
+在 `agents.create()` 中传 `requireInitialPromptReservation: true`；旧主机不支持
+`creationInitialPrompt` 时会在创建前拒绝。主机会从新会话公开前一直保留准入到首次原生 turn
+受理，期间拒绝其他 Paseo 入口的发送、后台命令、重载与生命周期修改。此保证只覆盖 Paseo
+管理的入口，不隔离任意外部 provider 客户端。首次受理后正常使用工具和权限交互，goals 与协作保留。
+
+重连或进程重启后使用只读查询：
+
+```ts
+const receipt = await client.creations.get({
+  kind: "agent", // 工作区连同初始 agent 一起创建时为 "workspace"
+  idempotencyKey: savedCreationKey,
+});
+if (receipt?.initialPrompt?.status === "accepted") {
+  console.log(receipt.agentId, receipt.initialPrompt.turnId);
+}
+```
+
+`phase: "completed"` 只证明创建完成。`initialPrompt` 独立记录首条输入：
+
+| 状态          | 含义                                                                                             |
+| ------------- | ------------------------------------------------------------------------------------------------ |
+| `pending`     | 还在准备或等待原生首次启动结果。                                                                 |
+| `accepted`    | provider 已受理输入；`turnId` 是 Paseo 前台轮次身份，不是执行完成，也不是 provider 协议原始 ID。 |
+| `not_sent`    | 准备阶段失败，尚未尝试原生派工。                                                                 |
+| `unknown`     | 可能已经受理，不自动重发或另建替代会话。                                                         |
+| `out_of_band` | 已交给后台命令处理器，不声称创建了 foreground turn。                                             |
+
+查不到记录、旧记录缺少 `initialPrompt`，都不能证明从未执行。首轮受理后 SessionStart hook
+失败仍是该轮执行失败，创建回执保留确切身份；从原生历史和权限面板核对。重放已完成或不确定的
+创建 key 不会重发首条输入。`creations.get()` 在记录不存在时也不会创建或发送。
+资源被删除后，查询仍保留历史回执，并用 `resources.status: "unavailable"` 与错误说明当前不可用；
+回执中的 agent 快照是历史记录，当前状态需刷新 agent。无 prompt 创建后另行发送不在此保留范围内。
+
+每个后台输入使用这条路径会创建不同的原生会话；共享上下文要明确传入，结果绑定各次执行的
+agent 和 turn，界面不能声称它们是同一原生连续会话。此能力没有补齐 provider 自主后续轮次的精确取消。
+
 ## 为后续提示词保持会话 {#keep-a-session-alive-for-follow-ups}
 
 当提示词稍后才会到来时，创建一个空闲的会话：

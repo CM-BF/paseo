@@ -253,9 +253,13 @@ test("partial provisioning without a registered workspace is not repeated", asyn
   expect(provisions).toBe(1);
 });
 
-test.each(["pending", "completed"])(
-  "imports a %s legacy agent receipt without creating another agent",
-  async (state) => {
+test.each([
+  ["pending", false],
+  ["completed", false],
+  ["completed", true],
+] as const)(
+  "imports a %s legacy agent receipt (prompt %s) without inventing a first-message receipt",
+  async (state, hasPrompt) => {
     const f = await fixture();
     const legacyDirectory = join(f.directory, "legacy");
     await mkdir(legacyDirectory);
@@ -275,7 +279,7 @@ test.each(["pending", "completed"])(
       key: "old-key",
       request,
       hasAgent: true,
-      hasPrompt: false,
+      hasPrompt,
       exists: async () => true,
       readAgent: async () => agent,
       createAgent: async () => {
@@ -286,7 +290,9 @@ test.each(["pending", "completed"])(
     await expect(
       service.create({ ...input, request: { config: { ...request.config, cwd: "/changed" } } }),
     ).rejects.toThrow("agent_request_key_conflict");
-    expect(await service.create(input)).toMatchObject({ phase: "completed", agent });
+    const imported = await service.create(input);
+    expect(imported).toMatchObject({ phase: "completed", agent });
+    expect(imported.initialPrompt).toBeUndefined();
     expect(await new CreationService(f.directory, silentLogger).create(input)).toMatchObject({
       phase: "completed",
       agent,
@@ -320,5 +326,130 @@ test("observer failures are logged without failing creation", async () => {
       phase: "workspace_ready",
       err: expect.objectContaining({ message: "delivery failed" }),
     }),
+  );
+});
+
+test("accepted initial prompt identity survives lost final ACK and a read-only restart lookup", async () => {
+  const f = await fixture();
+  let prompts = 0;
+  f.input.clientMessageId = "fixed-first-message";
+  f.input.createAgent = async (_id, _workspace, onReady, clientMessageId) => {
+    await onReady(agent);
+    const checkpoint = await f.service.subscribe("workspace", f.input.key, () => {});
+    expect(checkpoint.snapshot?.initialPrompt).toEqual({ status: "pending", clientMessageId });
+    checkpoint.unsubscribe();
+    prompts++;
+    return {
+      agent,
+      initialPromptStarted: true,
+      initialPrompt: {
+        status: "accepted",
+        clientMessageId: clientMessageId!,
+        turnId: "native-first-turn",
+      },
+    };
+  };
+  const original = await f.service.create(f.input);
+  const restarted = new CreationService(f.directory, silentLogger);
+  const read = await restarted.subscribe("workspace", f.input.key, () => {});
+  expect(read.snapshot).toMatchObject({
+    phase: original.phase,
+    agentId: original.agentId,
+    revision: original.revision,
+  });
+  expect(read.snapshot?.initialPrompt).toEqual({
+    status: "accepted",
+    clientMessageId: "fixed-first-message",
+    turnId: "native-first-turn",
+  });
+  read.unsubscribe();
+  expect(await restarted.create(f.input)).toEqual(original);
+  expect(prompts).toBe(1);
+});
+
+test("restart between prompt dispatch and ACK retains unknown rather than recreating or resending", async () => {
+  const f = await fixture();
+  const dispatch = deferred();
+  const release = deferred();
+  let prompts = 0;
+  f.input.createAgent = async (_id, _workspace, onReady) => {
+    await onReady(agent);
+    prompts++;
+    dispatch.resolve();
+    await release.promise;
+    throw new Error("start result lost");
+  };
+  const running = f.service.create(f.input);
+  await dispatch.promise;
+  const restartedDirectory = `${f.directory}-restart`;
+  directories.push(restartedDirectory);
+  await cp(f.directory, restartedDirectory, { recursive: true });
+  const restarted = new CreationService(restartedDirectory, silentLogger);
+  const read = await restarted.subscribe("workspace", f.input.key, () => {});
+  expect(read.snapshot).toMatchObject({
+    outcomeUnknown: true,
+    initialPrompt: { status: "unknown", clientMessageId: expect.any(String) },
+  });
+  read.unsubscribe();
+  const { resources: _resources, ...historical } = read.snapshot!;
+  expect(await restarted.create(f.input)).toEqual(historical);
+  expect(prompts).toBe(1);
+  release.resolve();
+  await running;
+});
+
+test("completed creation keeps an explicit unknown prompt result and a missing lookup does not create", async () => {
+  const f = await fixture();
+  f.input.createAgent = async (_id, _workspace, onReady, clientMessageId) => {
+    await onReady(agent);
+    return {
+      agent,
+      initialPromptStarted: false,
+      initialPrompt: {
+        status: "unknown",
+        clientMessageId: clientMessageId!,
+        error: "SessionStart result unavailable",
+      },
+    };
+  };
+  const result = await f.service.create(f.input);
+  expect(result).toMatchObject({
+    phase: "completed",
+    error: null,
+    initialPrompt: { status: "unknown", error: "SessionStart result unavailable" },
+  });
+  const missing = await f.service.subscribe("agent", "never-submitted", () => {});
+  expect(missing.snapshot).toBeNull();
+  missing.unsubscribe();
+  expect(f.calls).toEqual(["workspace"]);
+});
+
+test("read-only lookup keeps the durable first-prompt receipt after its agent is deleted", async () => {
+  const f = await fixture();
+  f.input.createAgent = async (_id, _workspace, onReady) => {
+    await onReady(agent);
+    return {
+      agent,
+      initialPromptStarted: true,
+      initialPrompt: {
+        status: "accepted",
+        clientMessageId: "deleted-first",
+        turnId: "original-turn",
+      },
+    };
+  };
+  const completed = await f.service.create(f.input);
+  const recovered = new CreationService(f.directory, silentLogger, async () => {
+    throw new Error("Previously created agent no longer exists");
+  });
+  const lookup = await recovered.subscribe("workspace", f.input.key, () => {});
+  expect(lookup.snapshot).toMatchObject({
+    phase: completed.phase,
+    initialPrompt: completed.initialPrompt,
+    resources: { status: "unavailable", error: "Previously created agent no longer exists" },
+  });
+  lookup.unsubscribe();
+  await expect(recovered.create(f.input)).rejects.toThrow(
+    "Previously created agent no longer exists",
   );
 });

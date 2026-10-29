@@ -130,6 +130,18 @@ function submittedPromptText(prompt: AgentPromptInput): string {
     .trim();
 }
 
+export class AgentInitialPromptReservedError extends Error {
+  constructor(agentId: string) {
+    super(`Agent ${agentId} is awaiting its creation-owned initial prompt`);
+    this.name = "AgentInitialPromptReservedError";
+  }
+}
+
+interface InitialPromptScope {
+  agentIds?: readonly string[];
+  workspaceIds?: readonly string[];
+}
+
 export class AgentManagerShuttingDownError extends Error {
   constructor() {
     super("Agent manager is shutting down");
@@ -804,6 +816,15 @@ export class AgentManager {
   private readonly collectingRuntimes = new Set<string>();
   private readonly lifecycleMutationTails = new Map<string, Promise<void>>();
   private readonly instructionUpdates = new Set<string>();
+  private readonly initialPromptOwners = new Map<string, symbol>();
+  private readonly initialPromptContexts = new Map<
+    string,
+    { workspaceId?: string; labels?: Record<string, string> }
+  >();
+  private readonly initialPromptMutations = new Map<
+    symbol,
+    InitialPromptScope & { parents: Map<string, string | null> }
+  >();
   private readonly instructionUpdateDescendants = new Map<string, Set<string>>();
   private readonly unavailableInstructionSessions = new WeakSet<AgentSession>();
   private readonly pendingChildSessionOpens = new Map<string, number>();
@@ -1379,11 +1400,157 @@ export class AgentManager {
     return this.providerSubagents.fetchTimeline(parentAgentId, subagentId, options);
   }
 
+  /** Reserve Paseo-managed entrypoints until a new agent's first native admission. */
+  async withInitialPromptReservation<T>(
+    requestedId: string | undefined,
+    operation: (agentId: string, owner: symbol) => Promise<T>,
+    context: { workspaceId?: string; labels?: Record<string, string> } = {},
+  ): Promise<T> {
+    const agentId = validateAgentId(requestedId ?? this.idFactory(), "createAgent");
+    if (this.agents.has(agentId) || this.initialPromptOwners.has(agentId)) {
+      throw new Error(`Agent ${agentId} already exists or is being created`);
+    }
+    const owner = Symbol("initial prompt");
+    this.initialPromptOwners.set(agentId, owner);
+    this.initialPromptContexts.set(agentId, context);
+    try {
+      // Do not include the native first-turn ACK in the registration drain:
+      // provider shutdown may be what releases a lost/hung ACK.
+      this.assertInitialPromptScopeAvailable(agentId);
+      if (await this.registry?.get(agentId)) {
+        throw new Error(`Agent ${agentId} already has persisted history`);
+      }
+      this.assertInitialPromptScopeAvailable(agentId);
+      return await operation(agentId, owner);
+    } finally {
+      if (this.initialPromptOwners.get(agentId) === owner) this.initialPromptOwners.delete(agentId);
+      this.initialPromptContexts.delete(agentId);
+    }
+  }
+
+  /** Fence destructive outer operations before tombstones, cascades or cwd teardown. */
+  async withInitialPromptMutation<T>(
+    scope: InitialPromptScope,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const key = Symbol("initial prompt mutation");
+    const reservation = { ...scope, parents: new Map<string, string | null>() };
+    this.initialPromptMutations.set(key, reservation);
+    try {
+      this.assertNoReservedInitialPrompts();
+      if (scope.agentIds?.length && this.registry) {
+        for (const record of await this.registry.list()) {
+          reservation.parents.set(record.id, getParentAgentIdFromLabels(record.labels));
+        }
+      }
+      this.assertNoReservedInitialPrompts();
+      return await operation();
+    } finally {
+      this.initialPromptMutations.delete(key);
+    }
+  }
+
+  private assertNoReservedInitialPrompts(): void {
+    for (const agentId of this.initialPromptOwners.keys())
+      this.assertInitialPromptScopeAvailable(agentId);
+  }
+
+  private assertInitialPromptScopeAvailable(agentId: string): void {
+    const context = this.initialPromptContexts.get(agentId);
+    for (const scope of this.initialPromptMutations.values()) {
+      if (context?.workspaceId && scope.workspaceIds?.includes(context.workspaceId)) {
+        throw new AgentInitialPromptReservedError(agentId);
+      }
+      let current: string | null = agentId;
+      const seen = new Set<string>();
+      while (current && !seen.has(current)) {
+        if (scope.agentIds?.includes(current)) throw new AgentInitialPromptReservedError(agentId);
+        seen.add(current);
+        const labels: Record<string, string> | undefined =
+          this.initialPromptContexts.get(current)?.labels ?? this.agents.get(current)?.labels;
+        current = labels
+          ? getParentAgentIdFromLabels(labels)
+          : (scope.parents.get(current) ?? null);
+      }
+    }
+  }
+
+  private assertInitialPromptAvailable(agentId: string, owner?: symbol): void {
+    const reserved = this.initialPromptOwners.get(agentId);
+    if (reserved && reserved !== owner) {
+      throw new AgentInitialPromptReservedError(agentId);
+    }
+  }
+
+  /** Never reload, replace, or retry a fresh prompt after an uncertain provider start. */
+  async startCreatedAgentRun(
+    agentId: string,
+    prompt: AgentPromptInput,
+    options: AgentRunOptions | undefined,
+    owner: symbol,
+    onAttempt: () => void,
+  ): Promise<{ disposition: "turn_started"; turnId: string } | { disposition: "out_of_band" }> {
+    if (this.initialPromptOwners.get(agentId) !== owner) {
+      throw new Error("Initial prompt reservation is no longer owned by this creation");
+    }
+    this.assertAcceptingAgentRegistrations();
+    if (await this.tryRunOutOfBand(agentId, prompt, options, owner, onAttempt)) {
+      return { disposition: "out_of_band" };
+    }
+    const agent = this.requireSessionAgent(agentId);
+    const iterator = this.streamAgentWithAdmission(
+      agentId,
+      prompt,
+      options,
+      () => {
+        this.assertAcceptingAgentRegistrations();
+        onAttempt();
+        return agent.session.startTurn(prompt, options);
+      },
+      owner,
+    );
+    let first: IteratorResult<AgentStreamEvent>;
+    try {
+      first = await iterator.next();
+    } catch (error) {
+      // A rejected request and a lost native ACK can look identical. Keep the
+      // attempt visible without synthesizing a terminal or clearing permissions.
+      const message = `Initial prompt admission is unknown: ${error instanceof Error ? error.message : String(error)}`;
+      if (!(error instanceof AgentManagerShuttingDownError) && this.agents.get(agentId) === agent) {
+        if (options?.clientMessageId) {
+          this.recordSubmittedPrompt(agent, prompt, options.clientMessageId, "rejected", {
+            messageId: options.clientMessageId,
+          });
+        }
+        if (!agent.activeTurnId && agent.pendingPermissions.size === 0) {
+          agent.lifecycle = "error";
+          agent.lastError = message;
+        }
+        await this.appendSystemErrorTimelineMessage(agent, agent.provider, message);
+        this.emitState(agent);
+      }
+      throw error;
+    }
+    if (first.done || first.value.type !== "turn_started" || !first.value.turnId) {
+      throw new Error("Initial prompt did not report a native turn");
+    }
+    void (async () => {
+      for await (const _event of iterator) {
+        /* Events are delivered through AgentManager. */
+      }
+    })().catch((error: unknown) => {
+      this.logger.error({ err: error, agentId }, "Initial agent turn failed after admission");
+    });
+    return { disposition: "turn_started", turnId: first.value.turnId };
+  }
+
   createAgent(
     config: AgentSessionConfig,
     agentId: string | undefined,
     options: CreateAgentOptions,
+    initialPromptOwner?: symbol,
   ): Promise<ManagedAgent> {
+    if (agentId) this.assertInitialPromptAvailable(agentId, initialPromptOwner);
     return this.trackAgentRegistrationOperation(
       this.withChildSessionOpen(options.labels, () =>
         this.createAgentInternal(config, agentId, options),
@@ -1742,7 +1909,8 @@ export class AgentManager {
     this.instructionUpdateDescendants.set(agentId, descendants);
   }
 
-  private assertRuntimeMutationAvailable(agentId: string): void {
+  private assertRuntimeMutationAvailable(agentId: string, initialPromptOwner?: symbol): void {
+    this.assertInitialPromptAvailable(agentId, initialPromptOwner);
     this.assertInstructionsNotUpdating(agentId);
     const session = this.agents.get(agentId)?.session;
     if (session && this.unavailableInstructionSessions.has(session)) {
@@ -2255,6 +2423,7 @@ export class AgentManager {
     return (
       agent.lifecycle === "idle" &&
       !this.instructionUpdateOwner(agent.id) &&
+      !this.initialPromptOwners.has(agent.id) &&
       !this.unavailableInstructionSessions.has(agent.session) &&
       !agent.internal &&
       agent.activeForegroundTurnId === null &&
@@ -2275,10 +2444,14 @@ export class AgentManager {
       return existing;
     }
 
-    const close = this.runLifecycleMutation(agentId, async () => {
-      // A preceding reload or archive may already have closed the durable agent.
-      if (this.agents.has(agentId)) await this.closeAgentRuntime(agentId);
-    });
+    const close = this.runLifecycleMutation(
+      agentId,
+      async () => {
+        // A preceding reload or archive may already have closed the durable agent.
+        if (this.agents.has(agentId)) await this.closeAgentRuntime(agentId);
+      },
+      this.acceptingAgentRegistrations ? undefined : this.initialPromptOwners.get(agentId),
+    );
     this.inFlightAgentCloses.set(agentId, close);
     const clearClose = () => {
       if (this.inFlightAgentCloses.get(agentId) === close) {
@@ -2349,7 +2522,9 @@ export class AgentManager {
   }
 
   async archiveAgent(agentId: string): Promise<{ archivedAt: string }> {
-    return this.runLifecycleMutation(agentId, () => this.archiveAgentUnlocked(agentId));
+    return this.withInitialPromptMutation({ agentIds: [agentId] }, () =>
+      this.runLifecycleMutation(agentId, () => this.archiveAgentUnlocked(agentId)),
+    );
   }
 
   private async archiveAgentUnlocked(
@@ -2841,8 +3016,8 @@ export class AgentManager {
   }
 
   async archiveSnapshot(agentId: string, archivedAt: string): Promise<StoredAgentRecord> {
-    return this.runLifecycleMutation(agentId, () =>
-      this.archiveSnapshotUnlocked(agentId, archivedAt),
+    return this.withInitialPromptMutation({ agentIds: [agentId] }, () =>
+      this.runLifecycleMutation(agentId, () => this.archiveSnapshotUnlocked(agentId, archivedAt)),
     );
   }
 
@@ -2964,11 +3139,21 @@ export class AgentManager {
     await this.writeStoredMetadata(agentId, updates);
   }
 
-  private async runLifecycleMutation<T>(agentId: string, mutation: () => Promise<T>): Promise<T> {
+  private async runLifecycleMutation<T>(
+    agentId: string,
+    mutation: () => Promise<T>,
+    initialPromptOwner?: symbol,
+  ): Promise<T> {
     // Parent cascade classifies a child inside the same lane used by open-tab
     // label writes, so a received ownership update cannot be overtaken.
     const previous = this.lifecycleMutationTails.get(agentId) ?? Promise.resolve();
-    const result = previous.catch(() => undefined).then(mutation);
+    this.assertInitialPromptAvailable(agentId, initialPromptOwner);
+    const result = previous
+      .catch(() => undefined)
+      .then(() => {
+        this.assertInitialPromptAvailable(agentId, initialPromptOwner);
+        return mutation();
+      });
     const tail = result.then(
       () => undefined,
       () => undefined,
@@ -3032,8 +3217,10 @@ export class AgentManager {
     agentId: string,
     prompt: AgentPromptInput,
     options?: AgentRunOptions,
+    initialPromptOwner?: symbol,
+    onInitialAttempt?: () => void,
   ): Promise<boolean> {
-    this.assertRuntimeMutationAvailable(agentId);
+    this.assertRuntimeMutationAvailable(agentId, initialPromptOwner);
     if (this.collectingRuntimes.has(agentId) || !this.agents.has(agentId)) {
       await this.waitForAgentClose(agentId);
       await ensureAgentLoaded(agentId, {
@@ -3042,7 +3229,7 @@ export class AgentManager {
         logger: this.logger,
       });
     }
-    this.assertRuntimeMutationAvailable(agentId);
+    this.assertRuntimeMutationAvailable(agentId, initialPromptOwner);
     const agent = this.requireSessionAgent(agentId);
     // Providers parse slash commands from the raw text, so a command another agent sent
     // must reach them without its sender envelope.
@@ -3053,11 +3240,14 @@ export class AgentManager {
     if (!handler) {
       return false;
     }
-    this.touchUpdatedAt(agent);
-    if (options?.clientMessageId) {
-      this.recordSubmittedPrompt(agent, prompt, options.clientMessageId, "accepted");
-      this.emitState(agent);
-    }
+    const recordAccepted = () => {
+      this.touchUpdatedAt(agent);
+      if (options?.clientMessageId) {
+        this.recordSubmittedPrompt(agent, prompt, options.clientMessageId, "accepted");
+        this.emitState(agent);
+      }
+    };
+    if (!initialPromptOwner) recordAccepted();
     const dispatch = (event: AgentStreamEvent): void => {
       // Persist timeline items so they show up in fetchAgentTimeline; broadcast
       // for live subscribers. Other event types are broadcast only.
@@ -3073,18 +3263,29 @@ export class AgentManager {
       }
       this.dispatchStream(agent.id, event, { timestamp: new Date().toISOString() });
     };
-    void this.runForegroundMutation(agentId, async () => {
-      try {
-        await handler.run({ emit: dispatch });
-      } catch (error) {
-        const text = error instanceof Error ? error.message : "Out-of-band command failed";
-        dispatch({
-          type: "timeline",
-          provider: agent.provider,
-          item: { type: "assistant_message", text: `[Error] ${text}` },
-        });
-      }
-    });
+    const handled = this.runForegroundMutation(
+      agentId,
+      async () => {
+        if (initialPromptOwner) {
+          this.assertAcceptingAgentRegistrations();
+          onInitialAttempt?.();
+          recordAccepted();
+        }
+        try {
+          await handler.run({ emit: dispatch });
+        } catch (error) {
+          const text = error instanceof Error ? error.message : "Out-of-band command failed";
+          dispatch({
+            type: "timeline",
+            provider: agent.provider,
+            item: { type: "assistant_message", text: `[Error] ${text}` },
+          });
+        }
+      },
+      initialPromptOwner,
+    );
+    if (initialPromptOwner) await handled;
+    else void handled;
     return true;
   }
 
@@ -3214,8 +3415,9 @@ export class AgentManager {
     prompt: AgentPromptInput,
     options?: AgentRunOptions,
     start?: () => Promise<{ turnId: string }>,
+    initialPromptOwner?: symbol,
   ): AsyncGenerator<AgentStreamEvent> {
-    this.assertRuntimeMutationAvailable(agentId);
+    this.assertRuntimeMutationAvailable(agentId, initialPromptOwner);
     if (this.collectingRuntimes.has(agentId) || (!this.agents.has(agentId) && this.registry)) {
       if (start) throw new IdleTurnAdmissionRejected("busy");
       return this.streamAfterRuntimeCollection(agentId, prompt, options);
@@ -3276,6 +3478,10 @@ export class AgentManager {
       const turnStartedAt = new Date();
       pendingRun.start = { status: "started", turnId };
       agent.activeForegroundTurnId = turnId;
+      // Its first native admission now owns the foreground, including tools and permissions.
+      if (initialPromptOwner && this.initialPromptOwners.get(agentId) === initialPromptOwner) {
+        this.initialPromptOwners.delete(agentId);
+      }
       this.openActiveTurn(agent, turnId, turnStartedAt);
       agent.lifecycle = "running";
       this.touchUpdatedAt(agent);
@@ -3617,9 +3823,19 @@ export class AgentManager {
     });
   }
 
-  private async runForegroundMutation<T>(agentId: string, operation: () => Promise<T>): Promise<T> {
+  private async runForegroundMutation<T>(
+    agentId: string,
+    operation: () => Promise<T>,
+    initialPromptOwner?: symbol,
+  ): Promise<T> {
+    this.assertInitialPromptAvailable(agentId, initialPromptOwner);
     const previous = this.foregroundMutationTails.get(agentId) ?? Promise.resolve();
-    const run = previous.catch(() => undefined).then(operation);
+    const run = previous
+      .catch(() => undefined)
+      .then(() => {
+        this.assertInitialPromptAvailable(agentId, initialPromptOwner);
+        return operation();
+      });
     const tail = run.then(
       () => undefined,
       () => undefined,
@@ -3991,6 +4207,7 @@ export class AgentManager {
   }
 
   async rewind(agentId: string, messageId: string, mode: RewindMode): Promise<void> {
+    this.assertRuntimeMutationAvailable(agentId);
     const agent = this.requireSessionAgent(agentId);
     const submittedRow = this.timelineStore
       .getRows(agentId)
@@ -4009,6 +4226,7 @@ export class AgentManager {
       await this.cancelAgentRunBefore(agentId, "rewind");
     }
 
+    this.assertRuntimeMutationAvailable(agentId);
     const lock = this.runs.createPendingRun(agentId);
     try {
       this.logger.info(

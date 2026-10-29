@@ -360,7 +360,18 @@ receipt return an unknown outcome instead of being repeated.
 
 Agent registration commits creation. Rejecting the first prompt is a turn error on that
 agent; reporting creation failure leaves an orphaned agent and invites another Create.
-Receipt replay must not resend the prompt.
+Receipt replay must not resend the prompt. `initialPrompt` is a separate durable receipt:
+accepted stores the admitted Paseo foreground turn ID, and unknown survives restart without another send.
+The public `creations.get` query uses the existing creation subscription read path without
+starting work and retains history after resource deletion, with current availability reported separately. A missing receipt is not evidence that an earlier dispatch never happened.
+
+A creation with a prompt reserves the new agent before registration makes it visible. Other
+Paseo-managed foreground, out-of-band and lifecycle mutations reject until its first native
+admission. The reservation is released at that boundary so native tools and permissions can
+proceed; it is not a lock over external provider clients. Startup preparation failure and an
+uncertain start remain distinct from an accepted turn failing later. The SDK's opt-in
+`requireInitialPromptReservation` checks `creationInitialPrompt` before every submission,
+including reconnect recovery. Create-without-prompt followed by a separate run, including existing schedule and response-loop paths, is outside this reservation. Old creation receipts need not contain this newer evidence.
 
 `packages/client/src/creation/` owns capability selection and legacy orchestration.
 Callers always pass the initial prompt to agent creation. On an older host, the client

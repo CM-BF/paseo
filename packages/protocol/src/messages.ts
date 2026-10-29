@@ -3773,6 +3773,7 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(workspaceRequestReceipts): added in v0.8.0; remove gate after 2027-03-07.
         workspaceRequestReceipts: z.boolean().optional(),
         creationLifecycle: z.boolean().optional(),
+        creationInitialPrompt: z.boolean().optional(),
         // COMPAT(hubAgentRpc): added in v0.8.0; remove gate after 2027-03-05.
         hubAgentRpc: z.boolean().optional(),
         // COMPAT(internalAgents): added in v0.9.0; remove gate after 2027-03-17.
@@ -5098,6 +5099,19 @@ export const ClearAgentAttentionResponseMessageSchema = z.object({
   }),
 });
 
+export const CreationPromptReceiptSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("pending"), clientMessageId: z.string() }),
+  z.object({ status: z.literal("accepted"), clientMessageId: z.string(), turnId: z.string() }),
+  z.object({ status: z.literal("not_sent"), clientMessageId: z.string(), error: z.string() }),
+  z.object({
+    status: z.literal("unknown"),
+    clientMessageId: z.string(),
+    error: z.string().optional(),
+  }),
+  z.object({ status: z.literal("out_of_band"), clientMessageId: z.string() }),
+]);
+export type CreationPromptReceipt = z.infer<typeof CreationPromptReceiptSchema>;
+
 export const CreationSnapshotSchema = z.object({
   kind: z.enum(["workspace", "agent"]),
   idempotencyKey: z.string(),
@@ -5119,6 +5133,15 @@ export const CreationSnapshotSchema = z.object({
   errorCode: z.string().optional(),
   failedStage: z.enum(["workspace", "agent", "prompt"]).optional(),
   outcomeUnknown: z.boolean().optional(),
+  /** Creation completion does not imply native prompt admission. */
+  initialPrompt: CreationPromptReceiptSchema.optional(),
+  /** Live resource validation at lookup time; the durable receipt remains historical. */
+  resources: z
+    .object({
+      status: z.enum(["available", "unavailable"]),
+      error: z.string().optional(),
+    })
+    .optional(),
 });
 export type CreationSnapshot = z.infer<typeof CreationSnapshotSchema>;
 export type AgentCreateRequest = z.infer<typeof AgentCreateRequestSchema>;

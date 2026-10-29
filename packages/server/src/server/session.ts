@@ -105,6 +105,7 @@ import {
 
 import {
   AgentManager,
+  AgentInitialPromptReservedError,
   AgentRunCancellationError,
   AgentInstructionsUpdateError,
   AgentTurnChangedError,
@@ -3367,47 +3368,55 @@ export class Session {
   private async handleDeleteAgentRequest(agentId: string, requestId: string): Promise<void> {
     this.sessionLogger.info({ agentId }, `Deleting agent ${agentId} from registry`);
 
-    const knownWorkspaceId =
-      this.agentManager.getAgent(agentId)?.workspaceId ??
-      (await this.agentStorage.get(agentId))?.workspaceId ??
-      null;
+    await this.agentManager.withInitialPromptMutation({ agentIds: [agentId] }, async () => {
+      const knownAgent =
+        this.agentManager.getAgent(agentId) ?? (await this.agentStorage.get(agentId));
+      const knownWorkspaceId = knownAgent?.workspaceId ?? null;
 
-    // File-backed storage still needs an early delete fence before closeAgent().
-    beginAgentDeleteIfSupported(this.agentStorage, agentId);
+      // An idempotent delete of an unknown ID must not poison a later creation
+      // with a storage tombstone. Creation-owned IDs are rejected before this point.
+      if (knownAgent) {
+        // File-backed storage still needs an early delete fence before closeAgent().
+        beginAgentDeleteIfSupported(this.agentStorage, agentId);
 
-    try {
-      await closeAgentCommand({ agentManager: this.agentManager }, agentId);
-    } catch (error) {
-      this.sessionLogger.warn(
-        { err: error, agentId },
-        `Failed to close agent ${agentId} during delete`,
-      );
-    }
+        try {
+          await closeAgentCommand({ agentManager: this.agentManager }, agentId);
+        } catch (error) {
+          if (error instanceof AgentInitialPromptReservedError) throw error;
+          this.sessionLogger.warn(
+            { err: error, agentId },
+            `Failed to close agent ${agentId} during delete`,
+          );
+        }
 
-    // Drain queued persistence from the just-closed agent before removing its
-    // durable snapshot, otherwise an in-flight background write can recreate it.
-    await this.agentManager.flush();
+        // Drain queued persistence from the just-closed agent before removing its
+        // durable snapshot, otherwise an in-flight background write can recreate it.
+        await this.agentManager.flush();
 
-    try {
-      await this.agentStorage.remove(agentId);
-      await this.agentManager.deleteAgentState(agentId);
-    } catch (error) {
-      this.sessionLogger.error({ err: error, agentId }, `Failed to fully delete agent ${agentId}`);
-    }
+        try {
+          await this.agentStorage.remove(agentId);
+          await this.agentManager.deleteAgentState(agentId);
+        } catch (error) {
+          this.sessionLogger.error(
+            { err: error, agentId },
+            `Failed to fully delete agent ${agentId}`,
+          );
+        }
+      }
+      this.emit({
+        type: "agent_deleted",
+        payload: {
+          agentId,
+          requestId,
+        },
+      });
 
-    this.emit({
-      type: "agent_deleted",
-      payload: {
-        agentId,
-        requestId,
-      },
+      await this.agentUpdates.removeAgent(agentId);
+
+      if (knownWorkspaceId) {
+        await this.emitWorkspaceUpdateForWorkspaceId(knownWorkspaceId);
+      }
     });
-
-    await this.agentUpdates.removeAgent(agentId);
-
-    if (knownWorkspaceId) {
-      await this.emitWorkspaceUpdateForWorkspaceId(knownWorkspaceId);
-    }
   }
 
   private async handleArchiveAgentRequest(agentId: string, requestId: string): Promise<void> {
@@ -3800,62 +3809,67 @@ export class Session {
         .filter((workspace) => !workspace.archivedAt)
         .map((workspace) => workspace.workspaceId);
 
-      if (activeWorkspaceIds.length > 0) {
-        this.markWorkspaceArchiving(activeWorkspaceIds, new Date().toISOString());
-        await this.emitWorkspaceUpdatesForWorkspaceIds(activeWorkspaceIds);
-      }
+      await this.agentManager.withInitialPromptMutation(
+        { workspaceIds: activeWorkspaceIds },
+        async () => {
+          if (activeWorkspaceIds.length > 0) {
+            this.markWorkspaceArchiving(activeWorkspaceIds, new Date().toISOString());
+            await this.emitWorkspaceUpdatesForWorkspaceIds(activeWorkspaceIds);
+          }
 
-      const removedWorkspaceIds: string[] = [];
-      try {
-        for (const workspaceId of activeWorkspaceIds) {
-          await archiveWorkspaceContents(
-            {
-              agentManager: this.agentManager,
-              agentStorage: this.agentStorage,
-              killTerminalsForWorkspace: (id) =>
-                this.terminalController.killTerminalsForWorkspace(id),
-              sessionLogger: this.sessionLogger,
+          const removedWorkspaceIds: string[] = [];
+          try {
+            for (const workspaceId of activeWorkspaceIds) {
+              await archiveWorkspaceContents(
+                {
+                  agentManager: this.agentManager,
+                  agentStorage: this.agentStorage,
+                  killTerminalsForWorkspace: (id) =>
+                    this.terminalController.killTerminalsForWorkspace(id),
+                  sessionLogger: this.sessionLogger,
+                },
+                workspaceId,
+              );
+              await this.archiveWorkspaceRecord(workspaceId);
+              removedWorkspaceIds.push(workspaceId);
+            }
+
+            await this.projectRegistry.remove(resolvedProjectId);
+            await removeProjectCustomIcon({
+              paseoHome: this.paseoHome,
+              projectId: resolvedProjectId,
+            }).catch((error) => {
+              this.sessionLogger.warn(
+                { err: error, projectId: resolvedProjectId },
+                "Failed to clean up removed project icon",
+              );
+            });
+          } finally {
+            if (activeWorkspaceIds.length > 0) {
+              this.clearWorkspaceArchiving(activeWorkspaceIds);
+            }
+          }
+
+          const updateIds =
+            removedWorkspaceIds.length > 0
+              ? removedWorkspaceIds
+              : [projectWorkspaces[0]?.workspaceId ?? projectId];
+          await this.emitWorkspaceUpdatesForWorkspaceIds(updateIds, {
+            removedProjectId: projectId,
+          });
+
+          this.emit({
+            type: "project.remove.response",
+            payload: {
+              requestId,
+              projectId,
+              accepted: true,
+              removedWorkspaceIds,
+              error: null,
             },
-            workspaceId,
-          );
-          await this.archiveWorkspaceRecord(workspaceId);
-          removedWorkspaceIds.push(workspaceId);
-        }
-
-        await this.projectRegistry.remove(resolvedProjectId);
-        await removeProjectCustomIcon({
-          paseoHome: this.paseoHome,
-          projectId: resolvedProjectId,
-        }).catch((error) => {
-          this.sessionLogger.warn(
-            { err: error, projectId: resolvedProjectId },
-            "Failed to clean up removed project icon",
-          );
-        });
-      } finally {
-        if (activeWorkspaceIds.length > 0) {
-          this.clearWorkspaceArchiving(activeWorkspaceIds);
-        }
-      }
-
-      const updateIds =
-        removedWorkspaceIds.length > 0
-          ? removedWorkspaceIds
-          : [projectWorkspaces[0]?.workspaceId ?? projectId];
-      await this.emitWorkspaceUpdatesForWorkspaceIds(updateIds, {
-        removedProjectId: projectId,
-      });
-
-      this.emit({
-        type: "project.remove.response",
-        payload: {
-          requestId,
-          projectId,
-          accepted: true,
-          removedWorkspaceIds,
-          error: null,
+          });
         },
-      });
+      );
     } catch (error) {
       this.sessionLogger.error(
         { err: error, projectId, requestId },
@@ -4182,15 +4196,20 @@ export class Session {
         agentId: request.agentId,
         hasAgent: true,
         hasPrompt: hasInitialCreationPrompt(request),
+        clientMessageId: request.clientMessageId,
         exists: this.creationResourceExists,
         readAgent: async (id) => {
           const record = await this.agentStorage.get(id);
           return record ? this.buildStoredAgentPayload(record) : null;
         },
-        createAgent: async (id, _workspace, onReady) => {
+        createAgent: async (id, _workspace, onReady, clientMessageId) => {
           try {
             return await this.createSessionAgent(
-              { ...request, type: "create_agent_request" },
+              {
+                ...request,
+                clientMessageId: clientMessageId ?? request.clientMessageId,
+                type: "create_agent_request",
+              },
               id,
               onReady,
             );
@@ -4271,6 +4290,7 @@ export class Session {
           agentId: agentInput?.agentId,
           hasAgent: Boolean(agentInput),
           hasPrompt: hasInitialCreationPrompt(agentInput),
+          clientMessageId: agentInput?.clientMessageId,
           exists: this.creationResourceExists,
           provision: async (id) => {
             const descriptor = await this.createRequestedWorkspace(
@@ -4291,7 +4311,7 @@ export class Session {
             };
           },
           createAgent: agentInput
-            ? async (id, workspace, onReady) => {
+            ? async (id, workspace, onReady, clientMessageId) => {
                 if (!workspace?.workspaceDirectory)
                   throw new Error("Created workspace has no directory");
                 const sourceCwd =
@@ -4308,6 +4328,7 @@ export class Session {
                 return this.createSessionAgent(
                   {
                     ...agentInput,
+                    clientMessageId: clientMessageId ?? agentInput.clientMessageId,
                     type: "create_agent_request",
                     requestId,
                     config: {
@@ -4496,7 +4517,12 @@ export class Session {
         throw new Error(`Working directory does not exist or is not a directory: ${resolvedCwd}`);
       }
 
-      const { snapshot, liveSnapshot, initialPromptStarted } = await createAgentCommand(
+      const {
+        snapshot,
+        liveSnapshot,
+        initialPromptStarted,
+        initialPrompt: promptReceipt,
+      } = await createAgentCommand(
         {
           agentManager: this.agentManager,
           agentStorage: this.agentStorage,
@@ -4549,7 +4575,11 @@ export class Session {
         { agentId: snapshot.id, provider: snapshot.provider },
         "Created agent",
       );
-      return { agent: await this.buildAgentPayload(liveSnapshot), initialPromptStarted };
+      return {
+        agent: await this.buildAgentPayload(liveSnapshot),
+        initialPromptStarted,
+        initialPrompt: promptReceipt,
+      };
     } catch (error) {
       await this.createAgentLifecycleDispatch.cleanupCreatedWorktreeAfterFailedAgentCreate({
         createdWorktree: createdWorktreeForCleanup,
@@ -7643,7 +7673,8 @@ export class Session {
       );
 
       const archivedWorkspace = await this.workspaceRegistry.get(request.workspaceId);
-      const archivedAt = archivedWorkspace?.archivedAt ?? new Date().toISOString();
+      const archivedAt = archivedWorkspace?.archivedAt;
+      if (!archivedAt) throw new Error("Workspace archive did not complete");
       this.emit({
         type: "archive_workspace_response",
         payload: {

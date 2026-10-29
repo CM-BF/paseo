@@ -486,6 +486,8 @@ export interface AgentAttentionRequiredNotification {
 type AgentConfigOverrides = Partial<Omit<AgentSessionConfig, "provider" | "cwd">>;
 
 export interface CreateAgentRequestOptions extends AgentConfigOverrides {
+  /** Reject before sending if the host cannot reserve creation's first prompt. */
+  requireInitialPromptReservation?: boolean;
   agentId?: string;
   onEvent?: (snapshot: CreationSnapshot) => void;
   config?: AgentSessionConfig;
@@ -3190,20 +3192,31 @@ export class DaemonClient {
       return this.lastServerInfoMessage?.features?.[feature] === true;
     },
     requestId: () => this.createRequestId(),
-    request: (kind, input) =>
-      kind === "workspace"
+    request: (kind, input) => {
+      // Keep the requirement with a reconnecting operation, never on the old wire.
+      const { requireInitialPromptReservation, ...request } = input;
+      const initialAgent =
+        kind === "workspace" && request.agent && typeof request.agent === "object"
+          ? (request.agent as Record<string, unknown>)
+          : undefined;
+      const { requireInitialPromptReservation: agentRequirement, ...agentRequest } =
+        initialAgent ?? {};
+      if (requireInitialPromptReservation || agentRequirement) this.requireCreationInitialPrompt();
+      if (initialAgent) request.agent = agentRequest;
+      return kind === "workspace"
         ? this.sendCorrelatedSessionRequest({
             requestId: input.requestId as string | undefined,
-            message: { ...input, type: "workspace.create.request" },
+            message: { ...request, type: "workspace.create.request" },
             responseType: "workspace.create.response",
             timeout: 0,
           })
         : this.sendCorrelatedSessionRequest({
             requestId: input.requestId as string | undefined,
-            message: { ...input, type: "agent.create.request" },
+            message: { ...request, type: "agent.create.request" },
             responseType: "agent.create.response",
             timeout: 0,
-          }),
+          });
+    },
     observe: (kind, idempotencyKey, next, error) => {
       const observation = this.observe("creation.subscribe.response", {
         type: "creation.subscribe.request",
@@ -3238,6 +3251,7 @@ export class DaemonClient {
   }
 
   async createAgent(options: CreateAgentRequestOptions): Promise<AgentSnapshotPayload> {
+    if (options.requireInitialPromptReservation) this.requireCreationInitialPrompt();
     if (options.git !== undefined || options.worktreeName !== undefined) {
       throw new Error(
         "Legacy git/worktreeName agent placement was removed. Use createWorkspace({ source, agent, idempotencyKey }) or create a workspace first and pass workspaceId.",
@@ -3250,6 +3264,28 @@ export class DaemonClient {
     });
     if (result.error || !result.agent) throw new Error(result.error ?? "Agent creation failed");
     return result.agent;
+  }
+
+  private requireCreationInitialPrompt(): void {
+    if (this.lastServerInfoMessage?.features?.creationInitialPrompt !== true) {
+      throw new Error("Update the host to reserve a new agent's initial prompt.");
+    }
+  }
+
+  /** Read/reconcile an existing journal entry without creating resources or sending prompts. */
+  async getCreation(input: {
+    kind: CreationSnapshot["kind"];
+    idempotencyKey: string;
+  }): Promise<CreationSnapshot | null> {
+    if (this.lastServerInfoMessage?.features?.creationLifecycle !== true) {
+      throw new Error("Update the host to query durable creation receipts.");
+    }
+    const result = await this.sendCorrelatedSessionRequest({
+      message: { type: "creation.subscribe.request", ...input, subscribe: false },
+      responseType: "creation.subscribe.response",
+    });
+    if (result.error) throw new Error(result.error);
+    return result.snapshot;
   }
 
   private async createLegacyAgent(
@@ -5065,6 +5101,7 @@ export class DaemonClient {
     input: CreateWorkspaceRequestOptions,
     requestId?: string,
   ): Promise<WorkspaceCreatePayload> {
+    if (input.agent?.requireInitialPromptReservation) this.requireCreationInitialPrompt();
     const resolvedRequestId = this.createRequestId(requestId ?? input.requestId);
     if (input.background !== undefined || input.callerAgentId) this.requireBackgroundWorkspaces();
     if (input.agent?.background !== undefined)

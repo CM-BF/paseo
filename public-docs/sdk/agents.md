@@ -37,6 +37,58 @@ console.log(result.status, result.lastMessage);
 
 A timeout does not cancel the agent.
 
+## Recover a creation without resending
+
+Persist the creation key, agent ID, client message ID, and complete input before dispatch. For a
+new execution that must own its first prompt, pass `requireInitialPromptReservation: true`:
+
+```ts
+await client.agents.create({
+  config: { provider: "codex/gpt-5.5" },
+  cwd: "/Users/me/dev/storefront",
+  agentId: savedAgentId,
+  idempotencyKey: savedCreationKey,
+  clientMessageId: savedMessageId,
+  prompt: savedPrompt,
+  requireInitialPromptReservation: true,
+});
+
+// After reconnect or process restart, this only reads the existing creation journal.
+const receipt = await client.creations.get({ kind: "agent", idempotencyKey: savedCreationKey });
+if (receipt?.initialPrompt?.status === "accepted") {
+  console.log(receipt.agentId, receipt.initialPrompt.turnId);
+}
+```
+
+The requirement needs `creationInitialPrompt` host support and rejects before creation on older
+hosts. The host reserves Paseo-managed sends, out-of-band commands, reloads and lifecycle changes
+until the new session's first native turn is admitted. It does not lock arbitrary external
+clients of the provider. Native tools and permission responses work after admission; goals and
+collaboration remain enabled. Creating without a prompt and sending later does not use this reservation.
+
+`phase: "completed"` confirms creation, independently of `initialPrompt`:
+
+| Initial prompt status | Meaning                                                                                                                    |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `pending`             | Creation is still preparing or awaiting the first start result.                                                            |
+| `accepted`            | The provider admitted the prompt; `turnId` is its Paseo foreground identity, not completion or a raw provider protocol ID. |
+| `not_sent`            | Preparation failed before attempting native admission.                                                                     |
+| `unknown`             | Admission may have happened; do not send again or create a replacement automatically.                                      |
+| `out_of_band`         | A command was handed to the out-of-band handler; no foreground turn is claimed.                                            |
+
+A missing receipt or an older receipt without `initialPrompt` does not prove that nothing ran.
+A failed SessionStart hook after admission is a failure of that accepted turn. Read its native
+history and permissions; the creation receipt retains its identity. Replaying an existing
+creation key never resends a committed or uncertain prompt. `creations.get()` never creates or
+sends, including when no journal entry exists. A lookup retains the historical receipt after
+resource deletion and reports `resources.status: "unavailable"` with the validation error.
+The stored agent snapshot is historical; refresh the agent to inspect its current state.
+
+Using this pattern for each queued input creates a different native conversation each time.
+Pass the required shared context explicitly and retain each execution's agent/turn identity;
+do not present the executions as one continuous native session. This does not provide exact
+cancellation of autonomous provider successors; see the provider boundary below.
+
 ## Keep a session alive for follow-ups
 
 Create an idle session when prompts arrive later:

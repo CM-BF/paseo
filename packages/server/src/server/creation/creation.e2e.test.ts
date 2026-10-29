@@ -123,6 +123,16 @@ test("creation progresses before agent readiness and continues after the disconn
     expect(replay.workspace?.id).toBe(workspaceId);
     expect(replay.agent?.id).toBe(agentId);
     expect(replay.agent?.title).toBe("Create once");
+    const receipt = await observer.getCreation({
+      kind: "workspace",
+      idempotencyKey: request.idempotencyKey,
+    });
+    expect(receipt?.initialPrompt).toMatchObject({
+      status: "accepted",
+      clientMessageId: "initial-one",
+      turnId: expect.any(String),
+    });
+    expect(receipt?.agentId).toBe(agentId);
     expect(agents).toBe(1);
     expect(prompts).toBe(1);
     const conflict = await observer.createWorkspace({
@@ -360,12 +370,20 @@ test.each(["agent", "workspace"] as const)(
         return result.agent!;
       };
       const created = await submit();
-      expect(created).toMatchObject({ status: "error", lastError: rejection });
+      expect(created).toMatchObject({
+        status: "error",
+        lastError: `Initial prompt admission is unknown: ${rejection}`,
+      });
       expect(snapshots.map((snapshot) => snapshot.phase)).not.toContain("prompt_started");
       expect(snapshots.at(-1)).toMatchObject({
         phase: "completed",
         error: null,
         agent: { id: created.id },
+        initialPrompt: {
+          status: "unknown",
+          clientMessageId: agent.clientMessageId,
+          error: rejection,
+        },
       });
       const expectedTimeline = [
         {
@@ -374,7 +392,10 @@ test.each(["agent", "workspace"] as const)(
           clientMessageId: agent.clientMessageId,
           messageId: agent.clientMessageId,
         },
-        { type: "assistant_message", text: `[System Error] ${rejection}` },
+        {
+          type: "assistant_message",
+          text: `[System Error] Initial prompt admission is unknown: ${rejection}`,
+        },
       ];
       expect(
         (await client.fetchAgentTimeline(created.id)).entries.map((entry) => entry.item),
@@ -568,6 +589,89 @@ test("Hub-shaped keyed agent worktree creation uses workspace setup and preserve
     });
   } finally {
     peer.close();
+    await client.close();
+    await daemon.close();
+    await rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  }
+}, 60000);
+
+test("real delete and workspace archive requests reject a creation-owned first prompt without tombstones or teardown", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "creation-destructive-wire-"));
+  const ready = deferred<string>();
+  const release = deferred<void>();
+  let starts = 0;
+  const daemon = await createCreationDaemon({
+    agentClients: createTestAgentClients({
+      onStartTurn: (_prompt, config) => {
+        if (!config.internal) starts++;
+      },
+    }),
+  });
+  const manager = daemon.daemon.agentManager;
+  const original = manager.startCreatedAgentRun.bind(manager);
+  vi.spyOn(manager, "startCreatedAgentRun").mockImplementation(async (...args) => {
+    ready.resolve(args[0]);
+    await release.promise;
+    return original(...args);
+  });
+  const client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws`, appVersion: "0.7.2" });
+  const workspaceId = "wks_abcdef0123456789";
+  const requestedAgentId = randomUUID();
+  let projectId = "";
+  let creation: ReturnType<typeof client.createWorkspace> | undefined;
+  try {
+    await client.connect();
+    await client.deleteAgent(requestedAgentId);
+    creation = client.createWorkspace({
+      onEvent: (snapshot) => {
+        if (snapshot.workspace) projectId = snapshot.workspace.projectId;
+      },
+      idempotencyKey: "first-destructive",
+      workspaceId,
+      source: { kind: "directory", path: directory },
+      agent: {
+        agentId: requestedAgentId,
+        cwd: directory,
+        provider: "codex",
+        initialPrompt: "Own first",
+        clientMessageId: "owned-first",
+      },
+    });
+    const agentId = await ready.promise;
+    await expect(client.deleteAgent(agentId)).rejects.toThrow("creation-owned");
+    const archived = await client.archiveWorkspace(workspaceId);
+    expect(archived.error).toContain("creation-owned");
+    expect(archived.archivedAt).toBeNull();
+    expect(projectId).not.toBe("");
+    await expect(client.removeProject(projectId)).rejects.toThrow("creation-owned");
+    expect(starts).toBe(0);
+    expect(manager.getAgent(agentId)?.lifecycle).toBe("idle");
+    release.resolve();
+    expect((await creation).creation?.initialPrompt?.status).toBe("accepted");
+    expect(starts).toBe(1);
+    await manager.waitForAgentEvent(agentId, { waitForActive: true });
+    // A rejected delete must not leave storage's durable delete fence behind.
+    const records = await client.fetchAgents();
+    expect(records.entries.some((entry) => entry.agent.id === agentId)).toBe(true);
+    expect(await daemon.daemon.agentStorage.get(agentId)).not.toBeNull();
+    const lookup = await client.getCreation({
+      kind: "workspace",
+      idempotencyKey: "first-destructive",
+    });
+    expect(lookup?.initialPrompt).toMatchObject({
+      status: "accepted",
+      clientMessageId: "owned-first",
+    });
+    await client.deleteAgent(agentId);
+    const afterDelete = await client.getCreation({
+      kind: "workspace",
+      idempotencyKey: "first-destructive",
+    });
+    expect(afterDelete?.resources?.status).toBe("unavailable");
+    expect(afterDelete?.initialPrompt).toEqual(lookup?.initialPrompt);
+  } finally {
+    release.resolve();
+    await creation?.catch(() => undefined);
     await client.close();
     await daemon.close();
     await rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });

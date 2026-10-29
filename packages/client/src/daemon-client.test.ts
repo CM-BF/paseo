@@ -8471,3 +8471,138 @@ test("closes before admission when a protected-capable daemon is reached in lega
   expect(daemonReceived).toHaveLength(1);
   expect(JSON.parse(daemonReceived[0] as string)).toMatchObject({ type: "hello" });
 });
+
+test("reserved initial prompts reject before dispatch on older hosts", async () => {
+  const transport = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "creation-contract",
+    transportFactory: () => transport.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connected = client.connect();
+  transport.triggerOpen({ features: { creationLifecycle: true } });
+  await connected;
+  await expect(
+    client.createAgent({
+      provider: "codex",
+      cwd: "/project",
+      initialPrompt: "first",
+      requireInitialPromptReservation: true,
+    }),
+  ).rejects.toThrow("reserve");
+  await expect(
+    client.createWorkspace({
+      source: { kind: "directory", path: "/project" },
+      agent: {
+        provider: "codex",
+        cwd: "/project",
+        initialPrompt: "first",
+        requireInitialPromptReservation: true,
+      },
+    }),
+  ).rejects.toThrow("reserve");
+  expect(transport.sent).toHaveLength(0);
+});
+
+test("creation lookup is one read-only RPC and preserves first-turn receipt independently of completed phase", async () => {
+  const transport = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "creation-contract",
+    transportFactory: () => transport.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connected = client.connect();
+  transport.triggerOpen({ features: { creationLifecycle: true, creationInitialPrompt: true } });
+  await connected;
+  const pending = client.getCreation({ kind: "agent", idempotencyKey: "lost-final-ack" });
+  const request = parseSentFrame(transport.sent[0]);
+  expect(request).toMatchObject({
+    type: "creation.subscribe.request",
+    kind: "agent",
+    idempotencyKey: "lost-final-ack",
+    subscribe: false,
+  });
+  const snapshot = {
+    kind: "agent",
+    idempotencyKey: "lost-final-ack",
+    revision: 4,
+    phase: "completed",
+    agentId: "native-agent",
+    workspaceId: null,
+    error: null,
+    initialPrompt: { status: "accepted", clientMessageId: "input-one", turnId: "turn-one" },
+  };
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "creation.subscribe.response",
+      payload: { requestId: request.requestId, snapshot, error: null },
+    }),
+  );
+  expect(await pending).toEqual(snapshot);
+  expect(transport.sent).toHaveLength(1);
+});
+
+test("reserved creation keeps its capability requirement across reconnect recovery", async () => {
+  const transport = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "creation-contract",
+    transportFactory: () => transport.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connected = client.connect();
+  transport.triggerOpen({
+    features: { creationLifecycle: true, creationInitialPrompt: true, ownedSubscriptions: true },
+  });
+  await connected;
+  const creation = client.createAgent({
+    provider: "codex",
+    cwd: "/project",
+    initialPrompt: "first",
+    idempotencyKey: "reserved-reconnect",
+    requireInitialPromptReservation: true,
+  });
+  void creation.catch(() => undefined);
+  expect(parseSentFrame(transport.sent[0])).not.toHaveProperty("requireInitialPromptReservation");
+  transport.triggerClose();
+  const reconnect = client.connect();
+  transport.triggerOpen({ features: { creationLifecycle: true, ownedSubscriptions: true } });
+  await reconnect;
+  await expect.poll(() => transport.sent.length).toBe(1);
+  const request = parseSentFrame(transport.sent[0]);
+  expect(request.type).toBe("creation.subscribe.request");
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "creation.subscribe.response",
+      payload: {
+        requestId: request.requestId,
+        subscriptionId: "read-reconnect",
+        snapshot: null,
+        error: null,
+      },
+    }),
+  );
+  await expect(creation).rejects.toThrow("reserve");
+  expect(transport.sent.map((frame) => parseSentFrame(frame).type)).not.toContain(
+    "agent.create.request",
+  );
+  await expect
+    .poll(() => parseSentFrame(transport.sent.at(-1)).type)
+    .toBe("subscription.release.request");
+  const release = parseSentFrame(transport.sent.at(-1));
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "subscription.release.response",
+      payload: {
+        requestId: release.requestId,
+        subscriptionId: "read-reconnect",
+        released: true,
+      },
+    }),
+  );
+});

@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, vi } from "vitest";
+import { PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 import { createTestAgentClients } from "../../test-utils/fake-agent-client.js";
@@ -62,15 +63,23 @@ test("session create forwards clientMessageId to the initial prompt run options"
     cwd: "/tmp/paseo-create-test",
     runtimeInfo: null,
   } as ManagedAgent;
-  const streamAgent = vi.fn(() => (async function* noop() {})());
+  const startCreatedAgentRun = vi.fn(async () => ({
+    disposition: "turn_started",
+    turnId: "native-first",
+  }));
+  const owner = Symbol("test creation");
   const dependencies: Parameters<typeof createAgentCommand>[0] = {
     agentManager: {
       createAgent: vi.fn(async () => snapshot),
+      withInitialPromptReservation: (
+        _id: unknown,
+        run: (id: string, owner: symbol) => Promise<unknown>,
+      ) => run("agent-1", owner),
       getAgent: vi.fn(() => snapshot),
       tryRunOutOfBand: vi.fn(() => false),
       hasInFlightRun: vi.fn(() => false),
       reloadStalePluginSession: async () => {},
-      streamAgent,
+      startCreatedAgentRun,
       waitForAgentRunStart: vi.fn(async () => undefined),
     } as unknown as Parameters<typeof createAgentCommand>[0]["agentManager"],
     agentStorage: {} as Parameters<typeof createAgentCommand>[0]["agentStorage"],
@@ -89,9 +98,15 @@ test("session create forwards clientMessageId to the initial prompt run options"
     firstAgentContext: { attachments: [] },
   });
 
-  expect(streamAgent).toHaveBeenCalledWith("agent-1", "hello from create", {
-    clientMessageId: "msg-create-1",
-  });
+  expect(startCreatedAgentRun).toHaveBeenCalledWith(
+    "agent-1",
+    "hello from create",
+    {
+      clientMessageId: "msg-create-1",
+    },
+    owner,
+    expect.any(Function),
+  );
 });
 
 test("session create validates the requested mode against the provider's modes", async () => {
@@ -186,9 +201,15 @@ test("mcp create accepts provider-only internal input and leaves model undefined
     runtimeInfo: null,
   } as ManagedAgent;
   const createAgent = vi.fn(async () => snapshot);
+  const owner = Symbol("test MCP creation");
   const dependencies: Parameters<typeof createAgentCommand>[0] = {
     agentManager: {
       createAgent,
+      withInitialPromptReservation: (
+        _id: unknown,
+        run: (id: string, owner: symbol) => Promise<unknown>,
+      ) => run("agent-1", owner),
+      startCreatedAgentRun: async () => ({ disposition: "turn_started", turnId: "mcp-first" }),
       getAgent: vi.fn(() => snapshot),
     } as unknown as Parameters<typeof createAgentCommand>[0]["agentManager"],
     agentStorage: {} as Parameters<typeof createAgentCommand>[0]["agentStorage"],
@@ -216,10 +237,11 @@ test("mcp create accepts provider-only internal input and leaves model undefined
       provider: "claude",
       model: undefined,
     }),
-    undefined,
+    "agent-1",
     expect.objectContaining({
       workspaceId: "ws-create-test",
     }),
+    owner,
   );
 });
 
@@ -468,4 +490,488 @@ test("session create with an internal config skips provider session persistence"
   );
   expect(createAgent.mock.calls[1]?.[0]).not.toHaveProperty("internal");
   expect(createAgent.mock.calls[1]?.[2]).not.toHaveProperty("persistSession");
+});
+
+function creationGate() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+test("published new agents reserve their first prompt against send, commands and lifecycle mutations", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "creation-first-prompt-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const starts: unknown[] = [];
+  const agentManager = new AgentManager({
+    clients: createTestAgentClients({
+      onStartTurn: (prompt) => {
+        starts.push(prompt);
+      },
+    }),
+    registry: storage,
+    logger,
+  });
+  const ready = creationGate();
+  const release = creationGate();
+  let id = "";
+  const creation = createAgentCommand(
+    {
+      agentManager,
+      agentStorage: storage,
+      logger,
+      providerSnapshotManager: createProviderSnapshotManagerStub().manager,
+    },
+    {
+      kind: "session",
+      config: { provider: "codex", cwd: workdir },
+      workspaceId: "ws-first",
+      initialPrompt: "The creation owns this input",
+      clientMessageId: "first-input",
+      labels: {},
+      provisionalTitle: null,
+      firstAgentContext: {},
+      onAgentReady: async (agent) => {
+        id = agent.id;
+        ready.resolve();
+        await release.promise;
+      },
+    },
+  );
+  try {
+    await ready.promise;
+    expect(agentManager.getAgent(id)?.lifecycle).toBe("idle");
+    expect(() => agentManager.streamAgent(id, "competing human input")).toThrow("creation-owned");
+    await expect(agentManager.tryRunOutOfBand(id, "/goal competing goal")).rejects.toThrow(
+      "creation-owned",
+    );
+    await expect(agentManager.cancelAgentRun(id)).rejects.toThrow("creation-owned");
+    await expect(agentManager.archiveAgent(id)).rejects.toThrow("creation-owned");
+    await expect(agentManager.rewind(id, "foreign-message", "conversation")).rejects.toThrow(
+      "creation-owned",
+    );
+    await expect(agentManager.reloadAgentSession(id)).rejects.toThrow("creation-owned");
+    await expect(agentManager.setAgentModel(id, "competing-model")).rejects.toThrow(
+      "creation-owned",
+    );
+    expect(starts).toEqual([]);
+    release.resolve();
+    const result = await creation;
+    expect(result.initialPrompt).toEqual({
+      status: "accepted",
+      clientMessageId: "first-input",
+      turnId: "fake-turn-0",
+    });
+    expect(starts).toEqual(["The creation owns this input"]);
+    await agentManager.waitForAgentEvent(id, { waitForActive: true });
+    await expect(
+      agentManager.runAgent(id, "Later explicit native conversation"),
+    ).resolves.toBeDefined();
+  } finally {
+    release.resolve();
+    await creation.catch(() => undefined);
+    await removeRealAgentManagerWorkdir({ agentManager, storage, workdir });
+  }
+});
+
+test("a failed first-turn start is unknown and never retried or reopened", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "creation-start-unknown-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const clients = createTestAgentClients();
+  const original = clients.codex.createSession.bind(clients.codex);
+  const start = vi.fn(async () => {
+    throw new Error("Native start ACK lost");
+  });
+  const create = vi.spyOn(clients.codex, "createSession").mockImplementation(async (...args) => {
+    const session = await original(...args);
+    session.startTurn = start;
+    return session;
+  });
+  const agentManager = new AgentManager({ clients, registry: storage, logger });
+  try {
+    const result = await createAgentCommand(
+      {
+        agentManager,
+        agentStorage: storage,
+        logger,
+        providerSnapshotManager: createProviderSnapshotManagerStub().manager,
+      },
+      {
+        kind: "session",
+        config: { provider: "codex", cwd: workdir },
+        workspaceId: "ws-unknown",
+        initialPrompt: "One attempt",
+        clientMessageId: "uncertain-first",
+        labels: {},
+        provisionalTitle: null,
+        firstAgentContext: {},
+      },
+    );
+    expect(result.initialPromptStarted).toBe(false);
+    expect(result.initialPrompt).toEqual({
+      status: "unknown",
+      clientMessageId: "uncertain-first",
+      error: "Native start ACK lost",
+    });
+    expect(agentManager.getAgent(result.snapshot.id)).not.toBeNull();
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledTimes(1);
+  } finally {
+    await removeRealAgentManagerWorkdir({ agentManager, storage, workdir });
+  }
+});
+
+test("a native failure after initial admission does not erase the accepted first-turn identity", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "creation-start-failure-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const agentManager = createRealAgentManager(storage);
+  try {
+    const result = await createAgentCommand(
+      {
+        agentManager,
+        agentStorage: storage,
+        logger,
+        providerSnapshotManager: createProviderSnapshotManagerStub().manager,
+      },
+      {
+        kind: "session",
+        config: { provider: "codex", cwd: workdir },
+        workspaceId: "ws-failed-turn",
+        initialPrompt: "emit a turn failure",
+        clientMessageId: "failed-turn",
+        labels: {},
+        provisionalTitle: null,
+        firstAgentContext: {},
+      },
+    );
+    expect(result.initialPrompt).toEqual({
+      status: "accepted",
+      clientMessageId: "failed-turn",
+      turnId: "fake-turn-0",
+    });
+    await agentManager.waitForAgentEvent(result.snapshot.id, { waitForActive: true });
+    expect(agentManager.getAgent(result.snapshot.id)?.lastError).toContain(
+      "Requested fake provider failure",
+    );
+  } finally {
+    await removeRealAgentManagerWorkdir({ agentManager, storage, workdir });
+  }
+});
+
+test("lost native start ACK preserves the actual first turn and its permission instead of fabricating failure", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "creation-start-permission-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const clients = createTestAgentClients();
+  const original = clients.codex.createSession.bind(clients.codex);
+  const permission = creationGate();
+  let starts = 0;
+  vi.spyOn(clients.codex, "createSession").mockImplementation(async (...args) => {
+    const session = await original(...args);
+    const subscribe = session.subscribe.bind(session);
+    session.subscribe = (listener) =>
+      subscribe((event) => {
+        listener(event);
+        if (event.type === "permission_requested") permission.resolve();
+      });
+    const start = session.startTurn.bind(session);
+    session.startTurn = async (prompt, options) => {
+      starts++;
+      await start(prompt, options);
+      await permission.promise;
+      throw new Error("ACK lost after permission requested");
+    };
+    return session;
+  });
+  const agentManager = new AgentManager({ clients, registry: storage, logger });
+  let fabricatedFailures = 0;
+  const unsubscribe = agentManager.subscribe((event) => {
+    if (event.type === "agent_stream" && event.event.type === "turn_failed") fabricatedFailures++;
+  });
+  try {
+    const result = await createAgentCommand(
+      {
+        agentManager,
+        agentStorage: storage,
+        logger,
+        providerSnapshotManager: createProviderSnapshotManagerStub().manager,
+      },
+      {
+        kind: "session",
+        config: { provider: "codex", cwd: workdir },
+        workspaceId: "ws-start-permission",
+        initialPrompt: "printf ok > permission.txt",
+        clientMessageId: "permission-first",
+        labels: {},
+        provisionalTitle: null,
+        firstAgentContext: {},
+      },
+    );
+    expect(result.initialPrompt?.status).toBe("unknown");
+    expect(agentManager.getPendingPermissions(result.snapshot.id)).toHaveLength(1);
+    expect(agentManager.getAgent(result.snapshot.id)?.activeTurnId).toBe("fake-turn-0");
+    expect(agentManager.getAgent(result.snapshot.id)?.lifecycle).not.toBe("error");
+    expect(starts).toBe(1);
+    expect(fabricatedFailures).toBe(0);
+  } finally {
+    unsubscribe();
+    await removeRealAgentManagerWorkdir({ agentManager, storage, workdir });
+  }
+});
+
+test.each(["before-dispatch", "after-attempt"])(
+  "shutdown releases a creation reservation %s without late dispatch",
+  async (stage) => {
+    const workdir = mkdtempSync(join(tmpdir(), "creation-shutdown-"));
+    const storage = new AgentStorage(join(workdir, "agents"), logger);
+    const clients = createTestAgentClients();
+    const original = clients.codex.createSession.bind(clients.codex);
+    const reached = creationGate();
+    const release = creationGate();
+    let id = "";
+    const start = vi.fn(async () => {
+      reached.resolve();
+      await release.promise;
+      throw new Error("Native start closed during shutdown");
+    });
+    vi.spyOn(clients.codex, "createSession").mockImplementation(async (...args) => {
+      const session = await original(...args);
+      const close = session.close.bind(session);
+      session.close = async () => {
+        release.resolve();
+        await close();
+      };
+      session.startTurn = start;
+      return session;
+    });
+    const manager = new AgentManager({ clients, registry: storage, logger });
+    const creation = createAgentCommand(
+      {
+        agentManager: manager,
+        agentStorage: storage,
+        logger,
+        providerSnapshotManager: createProviderSnapshotManagerStub().manager,
+      },
+      {
+        kind: "session",
+        config: { provider: "codex", cwd: workdir },
+        workspaceId: "ws-shutdown",
+        initialPrompt: "First",
+        clientMessageId: "shutdown-first",
+        labels: {},
+        provisionalTitle: null,
+        firstAgentContext: {},
+        onAgentReady: async (agent) => {
+          id = agent.id;
+          if (stage === "before-dispatch") {
+            reached.resolve();
+            await release.promise;
+          }
+        },
+      },
+    );
+    try {
+      await reached.promise;
+      manager.prepareForShutdown();
+      // Same order as bootstrap: close, drain registration/persistence, provider shutdown.
+      await manager.closeAgent(id);
+      await manager.flushForShutdown();
+      const result = await creation;
+      expect(result.initialPrompt?.status).toBe(
+        stage === "before-dispatch" ? "not_sent" : "unknown",
+      );
+      expect(start).toHaveBeenCalledTimes(stage === "before-dispatch" ? 0 : 1);
+    } finally {
+      release.resolve();
+      await creation.catch(() => undefined);
+      await removeRealAgentManagerWorkdir({ agentManager: manager, storage, workdir });
+    }
+  },
+);
+
+test("shutdown across out-of-band preparation does not attempt a native first prompt", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "creation-shutdown-prepare-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const clients = createTestAgentClients();
+  const manager = new AgentManager({ clients, registry: storage, logger });
+  const original = clients.codex.createSession.bind(clients.codex);
+  const start = vi.fn();
+  vi.spyOn(clients.codex, "createSession").mockImplementation(async (...args) => {
+    const session = await original(...args);
+    session.tryHandleOutOfBand = () => {
+      manager.prepareForShutdown();
+      return null;
+    };
+    session.startTurn = start;
+    return session;
+  });
+  try {
+    const result = await createAgentCommand(
+      {
+        agentManager: manager,
+        agentStorage: storage,
+        logger,
+        providerSnapshotManager: createProviderSnapshotManagerStub().manager,
+      },
+      {
+        kind: "session",
+        config: { provider: "codex", cwd: workdir },
+        workspaceId: "ws-shutdown-prepare",
+        initialPrompt: "First",
+        clientMessageId: "shutdown-prepared",
+        labels: {},
+        provisionalTitle: null,
+        firstAgentContext: {},
+      },
+    );
+    expect(result.initialPrompt?.status).toBe("not_sent");
+    expect(start).not.toHaveBeenCalled();
+  } finally {
+    await removeRealAgentManagerWorkdir({ agentManager: manager, storage, workdir });
+  }
+});
+
+test("parent archive rejects before mutating either record while a child owns its first input", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "creation-parent-archive-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const manager = createRealAgentManager(storage);
+  const ready = creationGate();
+  const release = creationGate();
+  const parent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: "ws-parent",
+    labels: {},
+  });
+  let childId = "";
+  const creation = createAgentCommand(
+    {
+      agentManager: manager,
+      agentStorage: storage,
+      logger,
+      providerSnapshotManager: createProviderSnapshotManagerStub().manager,
+    },
+    {
+      kind: "session",
+      config: { provider: "codex", cwd: workdir },
+      workspaceId: "ws-parent",
+      initialPrompt: "Child first",
+      labels: { [PARENT_AGENT_ID_LABEL]: parent.id },
+      provisionalTitle: null,
+      firstAgentContext: {},
+      onAgentReady: async (agent) => {
+        childId = agent.id;
+        ready.resolve();
+        await release.promise;
+      },
+    },
+  );
+  try {
+    await ready.promise;
+    await expect(manager.archiveAgent(parent.id)).rejects.toThrow("creation-owned");
+    expect(await storage.get(parent.id)).not.toBeNull();
+    expect((await storage.get(parent.id))?.archivedAt).toBeFalsy();
+    expect(await storage.get(childId)).not.toBeNull();
+    expect((await storage.get(childId))?.archivedAt).toBeFalsy();
+    release.resolve();
+    expect((await creation).initialPrompt?.status).toBe("accepted");
+  } finally {
+    release.resolve();
+    await creation.catch(() => undefined);
+    await removeRealAgentManagerWorkdir({ agentManager: manager, storage, workdir });
+  }
+});
+
+test("a destructive scope blocks a new creation until teardown completes", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "creation-destructive-admission-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const manager = createRealAgentManager(storage);
+  const entered = creationGate();
+  const release = creationGate();
+  const mutation = manager.withInitialPromptMutation(
+    { workspaceIds: ["ws-teardown"] },
+    async () => {
+      entered.resolve();
+      await release.promise;
+    },
+  );
+  try {
+    await entered.promise;
+    await expect(
+      createAgentCommand(
+        {
+          agentManager: manager,
+          agentStorage: storage,
+          logger,
+          providerSnapshotManager: createProviderSnapshotManagerStub().manager,
+        },
+        {
+          kind: "session",
+          config: { provider: "codex", cwd: workdir },
+          workspaceId: "ws-teardown",
+          initialPrompt: "Must not race deletion",
+          labels: {},
+          provisionalTitle: null,
+          firstAgentContext: {},
+        },
+      ),
+    ).rejects.toThrow("creation-owned");
+    expect(manager.listAgents()).toEqual([]);
+  } finally {
+    release.resolve();
+    await mutation;
+    await removeRealAgentManagerWorkdir({ agentManager: manager, storage, workdir });
+  }
+});
+
+test("a complete native event replay before the start ACK retains the admitted foreground identity", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "creation-start-replay-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const clients = createTestAgentClients();
+  const original = clients.codex.createSession.bind(clients.codex);
+  const completed = creationGate();
+  vi.spyOn(clients.codex, "createSession").mockImplementation(async (...args) => {
+    const session = await original(...args);
+    const subscribe = session.subscribe.bind(session);
+    session.subscribe = (listener) =>
+      subscribe((event) => {
+        listener(event);
+        if (event.type === "turn_completed") completed.resolve();
+      });
+    const start = session.startTurn.bind(session);
+    session.startTurn = async (...input) => {
+      const accepted = await start(...input);
+      await completed.promise;
+      return accepted;
+    };
+    return session;
+  });
+  const manager = new AgentManager({ clients, registry: storage, logger });
+  try {
+    const result = await createAgentCommand(
+      {
+        agentManager: manager,
+        agentStorage: storage,
+        logger,
+        providerSnapshotManager: createProviderSnapshotManagerStub().manager,
+      },
+      {
+        kind: "session",
+        config: { provider: "codex", cwd: workdir },
+        workspaceId: "ws-full-replay",
+        initialPrompt: "Hello",
+        clientMessageId: "replayed-first",
+        labels: {},
+        provisionalTitle: null,
+        firstAgentContext: {},
+      },
+    );
+    expect(result.initialPrompt).toEqual({
+      status: "accepted",
+      clientMessageId: "replayed-first",
+      turnId: "fake-turn-0",
+    });
+    await manager.waitForAgentEvent(result.snapshot.id, { waitForActive: true });
+    expect(manager.getAgent(result.snapshot.id)?.activeTurnId).toBeNull();
+  } finally {
+    await removeRealAgentManagerWorkdir({ agentManager: manager, storage, workdir });
+  }
 });

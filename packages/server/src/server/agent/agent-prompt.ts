@@ -242,6 +242,8 @@ export interface StartCreatedAgentInitialPromptParams {
   source?: AgentPromptSource;
   runOptions?: AgentRunOptions;
   logger: Logger;
+  owner: symbol;
+  onAttempt: () => void;
 }
 
 /**
@@ -368,36 +370,25 @@ export async function sendPreparedPromptToAgent(
 
 export async function startCreatedAgentInitialPrompt(
   params: StartCreatedAgentInitialPromptParams,
-): Promise<ManagedAgent> {
-  const currentSnapshot = params.agentManager.getAgent(params.agentId) ?? params.snapshot ?? null;
-  if (!currentSnapshot) {
-    throw new Error(`Agent ${params.agentId} not found`);
-  }
-
-  if (params.prompt === null) {
-    return currentSnapshot;
-  }
-
+): Promise<
+  { snapshot: ManagedAgent } & (
+    | { disposition: "turn_started"; turnId: string }
+    | { disposition: "out_of_band" }
+  )
+> {
   const delivery = prepareAgentMessage(
-    params.prompt,
+    params.prompt!,
     await resolvePromptSource(params.source, params.agentManager, params.agentStorage),
     params.runOptions?.clientMessageId,
   );
-  const dispatchResult = await startAgentRun(
-    params.agentManager,
+  const result = await params.agentManager.startCreatedAgentRun(
     params.agentId,
     delivery.prompt,
-    params.logger,
-    { runOptions: { ...params.runOptions, clientMessageId: delivery.messageId } },
+    { ...params.runOptions, clientMessageId: delivery.messageId },
+    params.owner,
+    params.onAttempt,
   );
-
-  if (dispatchResult.disposition === "turn_started") {
-    await waitForAgentRunStartWithTimeout(params.agentManager, params.agentId);
-  }
-
-  const refreshedSnapshot = params.agentManager.getAgent(params.agentId) ?? params.snapshot ?? null;
-  if (!refreshedSnapshot) {
-    throw new Error(`Agent ${params.agentId} not found`);
-  }
-  return refreshedSnapshot;
+  const snapshot = params.agentManager.getAgent(params.agentId) ?? params.snapshot;
+  if (!snapshot) throw new Error(`Agent ${params.agentId} not found`);
+  return { snapshot, ...result };
 }

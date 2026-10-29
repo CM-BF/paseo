@@ -44,6 +44,12 @@ nav: API 参考
 
 调用 `close()` 后请创建新的客户端。
 
+## `client.creations` {#clientcreations}
+
+`get({ kind: "agent" | "workspace", idempotencyKey })` 返回 `Promise<CreationSnapshot | null>`。
+它只读取并核对既有创建记录，不创建资源或发送输入，需要 `creationLifecycle`。
+可选 `initialPrompt` 将首轮受理结果与创建完成分开记录，参见[创建恢复](./agents.md)。
+
 ## `client.agents` {#clientagents}
 
 | 方法                 | 结果                   | 行为                                                                                      |
@@ -55,7 +61,7 @@ nav: API 参考
 
 `list({ subscribe: {} })` 还会返回一个 `subscriptionId` 和一个由你持有的 `subscription`。它的 `subscribe({ snapshot, update, error? })` 回调会先收到快照，再收到限定范围的线上更新；`release()` 结束这次观察。支持该能力的 daemon 会分配 ID，并让各个观察相互独立。较旧的 daemon 使用本地 ID 及其既有的共享投递行为。普通的列表调用不会创建观察。工作区列表遵循同样的契约。见[事件](./events.md)。
 
-创建选项包括 `config`、`cwd`、`parent`、`title`、`prompt`、`env`、`outputSchema`、`images`、`attachments`、`git`、`worktree`、`autoArchive`、`background` 和 `labels`。
+创建选项包括 `requireInitialPromptReservation`、`idempotencyKey`、`agentId`、`clientMessageId`、`config`、`cwd`、`parent`、`title`、`prompt`、`env`、`outputSchema`、`images`、`attachments`、`git`、`worktree`、`autoArchive`、`background` 和 `labels`。
 
 `parent` 接受主机本地的 Agent ID、`AgentAddress`（`{ serverId, agentId }`）或 Agent 句柄。句柄的 `address` 在断开连接后仍保留其主机身份。通过 `hosts.client(serverId)` 创建时，请传入父 Agent 句柄或完整地址；SDK 会把父级元数据带到目标主机。
 

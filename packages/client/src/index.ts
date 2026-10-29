@@ -278,6 +278,8 @@ export interface PaseoAgentConfig {
 }
 
 export interface PaseoAgentCreateOptions {
+  /** Require host-owned first-prompt admission; old hosts reject before creating anything. */
+  requireInitialPromptReservation?: boolean;
   idempotencyKey?: string;
   agentId?: string;
   onEvent?: (snapshot: CreationSnapshot) => void;
@@ -543,7 +545,17 @@ export interface PaseoConfigActions {
   ): Promise<{ requestId: string; config: MutableDaemonConfig }>;
 }
 
+export interface PaseoCreationActions {
+  /** A missing receipt does not prove that an earlier request was never dispatched. */
+  get(input: {
+    kind: CreationSnapshot["kind"];
+    idempotencyKey: string;
+  }): Promise<CreationSnapshot | null>;
+}
+export type { CreationSnapshot, CreationPromptReceipt } from "@getpaseo/protocol/messages";
+
 export interface PaseoApi {
+  readonly creations: PaseoCreationActions;
   readonly hosts: PaseoHostActions;
   dispose(): Promise<void>;
   observeEvents: DaemonClient["observeEvents"];
@@ -774,6 +786,7 @@ export function createPaseoApi(
     observeEvents,
     terminals,
     schedules: createScheduleActions(daemonClient),
+    creations: { get: (input) => daemonClient.getCreation(input) },
     projects: {
       list: (options) => daemonClient.listProjects(options),
       subscribe: (handler) => {

@@ -133,7 +133,15 @@ export default function contribute(server: PluginServerContext) {
     const agent = await workspace.agents.create({
       config: { provider: "pi/test" },
       prompt: "Created by a plugin handler",
+      idempotencyKey: "plugin-first-prompt",
+      clientMessageId: "plugin-first-message",
+      requireInitialPromptReservation: true,
     });
+    const creation = await paseo.creations.get({ kind: "agent", idempotencyKey: "plugin-first-prompt" });
+    if (creation?.agentId !== agent.id || creation.initialPrompt?.status !== "accepted" ||
+        creation.initialPrompt.clientMessageId !== "plugin-first-message" || !creation.initialPrompt.turnId) {
+      throw new Error("Plugin creation did not retain its first native turn receipt");
+    }
     return { workspaceId: workspace.id, agentId: agent.id };
   });
   server.handle(list, async (_input, { paseo }) => {

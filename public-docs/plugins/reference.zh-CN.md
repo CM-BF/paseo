@@ -1809,7 +1809,7 @@ function PullRequestAction({ theme }: PluginSurfaceProps) {
 }
 ```
 
-返回的 API 涵盖项目、工作区、Agent、终端、Provider 和 daemon 配置。其方法请参阅 [SDK API 参考](/docs/sdk/reference)。这里刻意没有连接生命周期方法，因为连接由 Paseo 负责。
+返回的 API 涵盖项目、工作区、Agent、创建回执、计划、终端、Provider 和 daemon 配置。其方法请参阅 [SDK API 参考](/docs/sdk/reference)。这里刻意没有连接生命周期方法，因为连接由 Paseo 负责。
 
 ### 发现主机并指定另一台主机 {#discover-hosts-and-target-another-host}
 

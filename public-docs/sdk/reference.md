@@ -46,6 +46,13 @@ Relay E2EE clients can also pass `e2ee.enabled` and `e2ee.daemonPublicKeyB64`. `
 
 Create a new client after `close()`.
 
+## `client.creations`
+
+`get({ kind: "agent" | "workspace", idempotencyKey })` returns `Promise<CreationSnapshot | null>`.
+It reads/reconciles the existing creation journal without creating resources or sending prompts.
+Requires `creationLifecycle`. Optional `initialPrompt` records admission separately from creation
+completion. See [creation recovery](./agents.md#recover-a-creation-without-resending).
+
 ## `client.agents`
 
 | Method               | Result                 | Behavior                                                                                                     |
@@ -57,7 +64,7 @@ Create a new client after `close()`.
 
 `list({ subscribe: {} })` also returns a `subscriptionId` and an owned `subscription`. Its `subscribe({ snapshot, update, error? })` callbacks receive the snapshot before scoped wire updates; `release()` ends that observation. Capable daemons assign the ID and keep observations independent. Older daemons use local IDs and their established shared delivery behavior. Plain lists create no observation. The same contract applies to workspace lists. See [events](./events.md).
 
-Creation options include `config`, `cwd`, `parent`, `title`, `prompt`, `env`, `outputSchema`, `images`, `attachments`, `git`, `worktree`, `autoArchive`, `background`, and `labels`.
+Creation options include `requireInitialPromptReservation`, `idempotencyKey`, `agentId`, `clientMessageId`, `config`, `cwd`, `parent`, `title`, `prompt`, `env`, `outputSchema`, `images`, `attachments`, `git`, `worktree`, `autoArchive`, `background`, and `labels`.
 
 `parent` accepts a host-local agent ID, an `AgentAddress` (`{ serverId, agentId }`), or an agent handle. A handle’s `address` keeps its host identity after disconnect. When creating through `hosts.client(serverId)`, pass the parent handle or complete address; the SDK carries parent metadata to the destination.
 

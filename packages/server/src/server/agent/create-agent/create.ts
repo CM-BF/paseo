@@ -1,3 +1,4 @@
+import type { CreationPromptReceipt } from "@getpaseo/protocol/messages";
 import type { FinishSubscriptions } from "../finish-subscriptions/index.js";
 import type { AgentPromptSource } from "../agent-messages/index.js";
 import type { Logger } from "pino";
@@ -110,6 +111,7 @@ export interface CreateAgentCommandResult {
   liveSnapshot: ManagedAgent;
   initialPromptStarted: boolean;
   initialPromptError: unknown | null;
+  initialPrompt?: CreationPromptReceipt;
   createdWorktree?: CreatePaseoWorktreeWorkflowResult;
 }
 
@@ -162,10 +164,29 @@ export async function createAgentCommand(
       ? await resolveSessionCreateAgent(dependencies, input)
       : await resolveMcpCreateAgent(dependencies, input);
 
+  const requestedId = input.kind === "session" ? input.agentId : undefined;
+  if (resolved.prompt !== undefined) {
+    return dependencies.agentManager.withInitialPromptReservation(
+      requestedId,
+      (agentId, owner) => createResolvedAgent(dependencies, input, resolved, agentId, owner),
+      resolved.createOptions,
+    );
+  }
+  return createResolvedAgent(dependencies, input, resolved, requestedId);
+}
+
+async function createResolvedAgent(
+  dependencies: CreateAgentCommandDependencies,
+  input: CreateAgentCommandInput,
+  resolved: ResolvedCreateAgent,
+  agentId: string | undefined,
+  initialPromptOwner?: symbol,
+): Promise<CreateAgentCommandResult> {
   const snapshot = await dependencies.agentManager.createAgent(
     resolved.config,
-    input.kind === "session" ? input.agentId : undefined,
+    agentId,
     resolved.createOptions,
+    ...(initialPromptOwner ? [initialPromptOwner] : []),
   );
 
   if (input.kind === "session") await input.onAgentReady?.(snapshot);
@@ -173,6 +194,7 @@ export async function createAgentCommand(
   let liveSnapshot = snapshot;
   let initialPromptStarted = false;
   let initialPromptError: unknown | null = null;
+  let initialPrompt: CreationPromptReceipt | undefined;
   if (input.kind === "mcp") {
     input.onCreated?.({ agentId: snapshot.id, createdWorktree: resolved.createdWorktree ?? null });
   }
@@ -192,16 +214,20 @@ export async function createAgentCommand(
       : undefined;
 
   if (resolved.prompt !== undefined) {
-    const sendResult = await sendInitialPrompt(dependencies, resolved, snapshot).catch(
-      async (error) => {
-        await notification?.reject();
-        throw error;
-      },
-    );
+    const sendResult = await sendInitialPrompt(
+      dependencies,
+      resolved,
+      snapshot,
+      initialPromptOwner!,
+    ).catch(async (error) => {
+      await notification?.reject();
+      throw error;
+    });
     notification?.accept();
     initialPromptStarted = sendResult.started;
     liveSnapshot = sendResult.liveSnapshot;
     initialPromptError = sendResult.error ?? null;
+    initialPrompt = sendResult.receipt;
   }
 
   return {
@@ -209,6 +235,7 @@ export async function createAgentCommand(
     liveSnapshot,
     initialPromptStarted,
     initialPromptError,
+    ...(initialPrompt ? { initialPrompt } : {}),
     ...(resolved.createdWorktree ? { createdWorktree: resolved.createdWorktree } : {}),
   };
 }
@@ -426,36 +453,56 @@ async function sendInitialPrompt(
   dependencies: CreateAgentCommandDependencies,
   resolved: ResolvedCreateAgent,
   snapshot: ManagedAgent,
-): Promise<{ started: boolean; liveSnapshot: ManagedAgent; error?: unknown }> {
+  owner: symbol,
+): Promise<{
+  started: boolean;
+  liveSnapshot: ManagedAgent;
+  receipt: CreationPromptReceipt;
+  error?: unknown;
+}> {
+  const clientMessageId = resolveClientMessageId(resolved.runOptions?.clientMessageId);
+  let attempted = false;
   try {
-    const prompt = resolved.prompt;
-    if (prompt === undefined) {
-      return { started: false, liveSnapshot: snapshot };
-    }
-    const liveSnapshot = await startCreatedAgentInitialPrompt({
+    const result = await startCreatedAgentInitialPrompt({
       agentStorage: dependencies.agentStorage,
       agentManager: dependencies.agentManager,
       agentId: snapshot.id,
       snapshot,
-      prompt,
+      prompt: resolved.prompt!,
       source: resolved.source,
-      runOptions: resolved.runOptions,
+      runOptions: { ...resolved.runOptions, clientMessageId },
       logger: resolved.promptLogger ?? dependencies.logger,
+      owner,
+      onAttempt: () => {
+        attempted = true;
+      },
     });
-    return { started: true, liveSnapshot };
+    return {
+      started: result.disposition === "turn_started",
+      liveSnapshot: result.snapshot,
+      receipt:
+        result.disposition === "turn_started"
+          ? { status: "accepted", clientMessageId, turnId: result.turnId }
+          : { status: "out_of_band", clientMessageId },
+    };
   } catch (error) {
-    if (resolved.promptFailure === "throw") {
-      throw error;
+    if (resolved.promptFailure === "throw") throw error;
+    if (resolved.promptFailure === "log") {
+      dependencies.logger.error(
+        { err: error, agentId: snapshot.id },
+        "Failed to run initial prompt",
+      );
     }
-    if (resolved.promptFailure === "return-error") {
-      return {
-        started: false,
-        liveSnapshot: dependencies.agentManager.getAgent(snapshot.id) ?? snapshot,
-        error,
-      };
-    }
-    dependencies.logger.error({ err: error, agentId: snapshot.id }, "Failed to run initial prompt");
-    return { started: false, liveSnapshot: snapshot };
+    return {
+      started: false,
+      liveSnapshot: dependencies.agentManager.getAgent(snapshot.id) ?? snapshot,
+      error,
+      receipt: {
+        status: attempted ? "unknown" : "not_sent",
+        clientMessageId,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    };
   }
 }
 

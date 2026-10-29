@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 
 import type { Logger } from "pino";
 
-import type { AgentManager } from "./agent/agent-manager.js";
+import { AgentInitialPromptReservedError, type AgentManager } from "./agent/agent-manager.js";
 import type { AgentStorage, StoredAgentRecord } from "./agent/agent-storage.js";
 import type { WorkspaceGitService } from "./workspace-git-service.js";
 import type { ForgeService } from "../services/forge-service.js";
@@ -33,7 +33,10 @@ export interface ArchiveDependencies {
   paseoWorktreesBaseRoot?: string;
   github: ForgeService;
   workspaceGitService: Pick<WorkspaceGitService, "getSnapshot" | "invalidateWorktrees">;
-  agentManager: Pick<AgentManager, "listAgents" | "getAgent" | "archiveAgent" | "archiveSnapshot">;
+  agentManager: Pick<
+    AgentManager,
+    "listAgents" | "getAgent" | "archiveAgent" | "archiveSnapshot" | "withInitialPromptMutation"
+  >;
   agentStorage: Pick<AgentStorage, "listByWorkspace">;
   // Resolves the worktree at a path to its workspaceId for archive-by-path. The
   // path uniquely identifies a worktree workspace; this is a directory lookup for
@@ -147,63 +150,68 @@ async function archiveByScopeWithPriority(
   const target = await resolveArchiveTarget(dependencies, request.scope);
   const targetWorkspaceIds = target.workspaceIds;
 
-  await stopWorkspaceSetups(dependencies, target.setupWorkspaceIds, request.requestId);
+  return dependencies.agentManager.withInitialPromptMutation(
+    { workspaceIds: targetWorkspaceIds },
+    async () => {
+      await stopWorkspaceSetups(dependencies, target.setupWorkspaceIds, request.requestId);
 
-  if (targetWorkspaceIds.length > 0) {
-    dependencies.markWorkspaceArchiving(targetWorkspaceIds, new Date().toISOString());
-  }
-
-  let removedDirectory = false;
-  let directoryLeftBehind: ArchiveResult["directoryLeftBehind"];
-
-  try {
-    if (targetWorkspaceIds.length > 0) {
-      await dependencies.emitWorkspaceUpdatesForWorkspaceIds(targetWorkspaceIds);
-    }
-
-    const { archivedAgents, archivedWorkspaceIds } = await archiveTargetRecords(
-      dependencies,
-      targetWorkspaceIds,
-      request.requestId,
-    );
-
-    if (target.backing?.mainRepoRoot) {
-      try {
-        await dependencies.workspaceGitService.getSnapshot(target.backing.mainRepoRoot, {
-          force: true,
-          reason: "archive-worktree",
-        });
-      } catch (error) {
-        dependencies.sessionLogger?.warn(
-          { err: error, cwd: target.backing.mainRepoRoot, requestId: request.requestId },
-          "Failed to force-refresh workspace git snapshot after archiving",
-        );
+      if (targetWorkspaceIds.length > 0) {
+        dependencies.markWorkspaceArchiving(targetWorkspaceIds, new Date().toISOString());
       }
-    }
 
-    if (target.backing !== null) {
-      const removal = await maybeRemoveDirectory(
-        dependencies,
-        request,
-        target,
-        archivedWorkspaceIds,
-      );
-      removedDirectory = removal.removedDirectory;
-      directoryLeftBehind = removal.directoryLeftBehind;
-    }
+      let removedDirectory = false;
+      let directoryLeftBehind: ArchiveResult["directoryLeftBehind"];
 
-    return {
-      archivedAgentIds: Array.from(archivedAgents),
-      archivedWorkspaceIds,
-      removedDirectory,
-      ...(directoryLeftBehind ? { directoryLeftBehind } : {}),
-    };
-  } finally {
-    if (targetWorkspaceIds.length > 0) {
-      dependencies.clearWorkspaceArchiving(targetWorkspaceIds);
-      await dependencies.emitWorkspaceUpdatesForWorkspaceIds(targetWorkspaceIds);
-    }
-  }
+      try {
+        if (targetWorkspaceIds.length > 0) {
+          await dependencies.emitWorkspaceUpdatesForWorkspaceIds(targetWorkspaceIds);
+        }
+
+        const { archivedAgents, archivedWorkspaceIds } = await archiveTargetRecords(
+          dependencies,
+          targetWorkspaceIds,
+          request.requestId,
+        );
+
+        if (target.backing?.mainRepoRoot) {
+          try {
+            await dependencies.workspaceGitService.getSnapshot(target.backing.mainRepoRoot, {
+              force: true,
+              reason: "archive-worktree",
+            });
+          } catch (error) {
+            dependencies.sessionLogger?.warn(
+              { err: error, cwd: target.backing.mainRepoRoot, requestId: request.requestId },
+              "Failed to force-refresh workspace git snapshot after archiving",
+            );
+          }
+        }
+
+        if (target.backing !== null) {
+          const removal = await maybeRemoveDirectory(
+            dependencies,
+            request,
+            target,
+            archivedWorkspaceIds,
+          );
+          removedDirectory = removal.removedDirectory;
+          directoryLeftBehind = removal.directoryLeftBehind;
+        }
+
+        return {
+          archivedAgentIds: Array.from(archivedAgents),
+          archivedWorkspaceIds,
+          removedDirectory,
+          ...(directoryLeftBehind ? { directoryLeftBehind } : {}),
+        };
+      } finally {
+        if (targetWorkspaceIds.length > 0) {
+          dependencies.clearWorkspaceArchiving(targetWorkspaceIds);
+          await dependencies.emitWorkspaceUpdatesForWorkspaceIds(targetWorkspaceIds);
+        }
+      }
+    },
+  );
 }
 
 async function resolveArchiveTarget(
@@ -372,6 +380,7 @@ async function archiveTargetRecords(
         archivedAgents.add(agentId);
       }
     } else {
+      if (result.reason instanceof AgentInitialPromptReservedError) throw result.reason;
       dependencies.sessionLogger?.warn(
         { err: result.reason, requestId },
         "archiveByScope workspace teardown failed; continuing",
@@ -557,6 +566,7 @@ export async function archiveWorkspaceContents(
 
   for (const result of archiveResults) {
     if (result.status === "rejected") {
+      if (result.reason instanceof AgentInitialPromptReservedError) throw result.reason;
       dependencies.sessionLogger?.warn(
         { err: result.reason, workspaceId },
         "Workspace archive teardown step failed; continuing",

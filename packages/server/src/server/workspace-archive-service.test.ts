@@ -147,6 +147,7 @@ function createArchiveDeps(input: ArchiveDepsInput): ArchiveTestDependencies {
     agentManager: {
       listAgents: () => [],
       getAgent: () => null,
+      withInitialPromptMutation: async (_scope, operation) => operation(),
       archiveAgent: vi.fn(async (agentId: string) => {
         archivedAgentIds.push(agentId);
         return { archivedAt: new Date().toISOString() };
@@ -918,6 +919,7 @@ describe("archiveByScope", () => {
       listAgents: () => [{ id: liveAgentId, workspaceId: targetWorkspaceId }] as ManagedAgent[],
       getAgent: (agentId: string) =>
         agentId === liveAgentId ? ({ id: liveAgentId } as ManagedAgent) : null,
+      withInitialPromptMutation: async (_scope, operation) => operation(),
       archiveAgent: vi.fn(async (agentId: string) => {
         deps.archivedAgentIds.push(agentId);
         return { archivedAt: new Date().toISOString() };
@@ -966,6 +968,7 @@ describe("archiveByScope", () => {
     deps.agentManager = {
       listAgents: () => [{ id: agentId, workspaceId }] as ManagedAgent[],
       getAgent: () => null,
+      withInitialPromptMutation: async (_scope, operation) => operation(),
       archiveAgent: vi.fn(async () => ({ archivedAt: new Date().toISOString() })),
       archiveSnapshot: vi.fn(async (id: string) => {
         deps.archivedSnapshotIds.push(id);

@@ -7,6 +7,7 @@ import {
   CreationSnapshotSchema,
   type AgentSnapshotPayload,
   type CreationSnapshot,
+  type CreationPromptReceipt,
   type WorkspaceDescriptorPayload,
 } from "@getpaseo/protocol/messages";
 import { writeFileAtomic } from "../atomic-file.js";
@@ -16,6 +17,7 @@ type Observer = (snapshot: CreationSnapshot) => void;
 export interface CreatedAgent {
   agent: AgentSnapshotPayload;
   initialPromptStarted: boolean;
+  initialPrompt?: CreationPromptReceipt;
 }
 interface CreationRequest {
   key: string;
@@ -24,6 +26,7 @@ interface CreationRequest {
   agentId?: string;
   hasAgent: boolean;
   hasPrompt: boolean;
+  clientMessageId?: string;
   exists: (kind: "workspace" | "agent", id: string) => Promise<boolean>;
   provision?: (
     workspaceId: string,
@@ -32,6 +35,7 @@ interface CreationRequest {
     agentId: string,
     workspace: WorkspaceDescriptorPayload | undefined,
     onReady: (agent: AgentSnapshotPayload) => Promise<void>,
+    clientMessageId?: string,
   ) => Promise<CreatedAgent>;
 }
 export type CreationInput = CreationRequest &
@@ -82,6 +86,7 @@ export class CreationService {
           error: `${input.kind}_request_outcome_unknown`,
           failedStage: record.inFlight,
           outcomeUnknown: true,
+          initialPrompt: uncertainPrompt(record.snapshot.initialPrompt),
         });
         return { completion: Promise.resolve(record.snapshot), snapshot: record.snapshot };
       }
@@ -138,10 +143,25 @@ export class CreationService {
           failedStage: record.inFlight,
           outcomeUnknown: true,
           error: `${kind}_request_outcome_unknown`,
+          initialPrompt: uncertainPrompt(record.snapshot.initialPrompt),
         });
       }
-      if (record?.snapshot.phase === "completed") await this.validateCompleted(record.snapshot);
-      return { snapshot: record?.snapshot ?? null, unsubscribe };
+      let snapshot = record?.snapshot ?? null;
+      if (snapshot && (snapshot.agent || snapshot.workspace)) {
+        try {
+          await this.validateCompleted(snapshot);
+          snapshot = { ...snapshot, resources: { status: "available" } };
+        } catch (error) {
+          snapshot = {
+            ...snapshot,
+            resources: {
+              status: "unavailable",
+              error: error instanceof Error ? error.message : String(error),
+            },
+          };
+        }
+      }
+      return { snapshot, unsubscribe };
     } catch (error) {
       unsubscribe();
       throw error;
@@ -171,7 +191,7 @@ export class CreationService {
       if (input.hasAgent && input.createAgent && !record.snapshot.agent) {
         record.inFlight = "agent";
         await this.write(identity, record);
-        const { agent, initialPromptStarted } = await input.createAgent(
+        const { agent, initialPromptStarted, initialPrompt } = await input.createAgent(
           record.snapshot.agentId!,
           record.snapshot.workspace,
           async (readyAgent) => {
@@ -182,8 +202,13 @@ export class CreationService {
               workspaceId: readyAgent.workspaceId ?? record.snapshot.workspaceId,
             });
           },
+          record.snapshot.initialPrompt?.clientMessageId,
         );
         record.inFlight = null;
+        record.snapshot = {
+          ...record.snapshot,
+          initialPrompt: initialPrompt ?? uncertainPrompt(record.snapshot.initialPrompt),
+        };
         if (initialPromptStarted)
           await this.publish(identity, record, { phase: "prompt_started", agent });
         else record.snapshot = { ...record.snapshot, agent };
@@ -191,30 +216,42 @@ export class CreationService {
       record.inFlight = null;
       await this.publish(identity, record, { phase: "completed" });
     } catch (error) {
-      const stage = record.inFlight ?? "agent";
-      const resourceId =
-        stage === "workspace" ? record.snapshot.workspaceId : record.snapshot.agentId;
-      const code =
-        error instanceof Error && "code" in error && typeof error.code === "string"
-          ? error.code
-          : undefined;
-      const rejectedBeforeProvision = code === "directory_not_found" || code === "source_required";
-      const unknown =
-        stage === "prompt" ||
-        (stage === "workspace" && !rejectedBeforeProvision) ||
-        (resourceId !== null && (await input.exists(stage, resourceId)));
-      // A failed provider startup with no registered resource can retry under the same ID.
-      // A partially provisioned resource or an attempted prompt needs reconciliation.
-      if (!unknown) record.inFlight = null;
-      await this.publish(identity, record, {
-        phase: "failed",
-        error: error instanceof Error ? error.message : String(error),
-        errorCode: code,
-        failedStage: stage,
-        outcomeUnknown: unknown,
-      });
+      await this.recordFailure(identity, record, input, error);
     }
     return record.snapshot;
+  }
+
+  private async recordFailure(
+    identity: string,
+    record: Record,
+    input: CreationInput,
+    error: unknown,
+  ): Promise<void> {
+    const stage = record.inFlight ?? "agent";
+    const resourceId =
+      stage === "workspace" ? record.snapshot.workspaceId : record.snapshot.agentId;
+    const code =
+      error instanceof Error && "code" in error && typeof error.code === "string"
+        ? error.code
+        : undefined;
+    const rejectedBeforeProvision = code === "directory_not_found" || code === "source_required";
+    const unknown =
+      stage === "prompt" ||
+      (stage === "workspace" && !rejectedBeforeProvision) ||
+      (resourceId !== null && (await input.exists(stage, resourceId)));
+    // A failed provider startup with no registered resource can retry under the same ID.
+    // A partially provisioned resource or an attempted prompt needs reconciliation.
+    if (!unknown) record.inFlight = null;
+    await this.publish(identity, record, {
+      phase: "failed",
+      error: error instanceof Error ? error.message : String(error),
+      errorCode: code,
+      failedStage: stage,
+      outcomeUnknown: unknown,
+      initialPrompt: unknown
+        ? uncertainPrompt(record.snapshot.initialPrompt)
+        : record.snapshot.initialPrompt,
+    });
   }
 
   // COMPAT(agentRequestReceipts): added in v0.8.0, remove after 2027-03-11 once old creation receipts can expire.
@@ -237,7 +274,10 @@ export class CreationService {
     const agent = await input.readAgent(receipt.agentId);
     if (!agent && receipt.state === "completed")
       throw new Error("Previously created agent no longer exists");
-    const record = initialRecord({ ...input, agentId: receipt.agentId }, fingerprint);
+    const record = initialRecord(
+      { ...input, hasPrompt: false, agentId: receipt.agentId },
+      fingerprint,
+    );
     record.snapshot = {
       ...record.snapshot,
       phase: agent ? "completed" : "failed",
@@ -350,8 +390,23 @@ function initialRecord(input: CreationInput, fingerprint: string): Record {
       error: null,
       workspaceId: input.workspaceId ?? (input.kind === "workspace" ? generateWorkspaceId() : null),
       agentId: input.hasAgent ? (input.agentId ?? randomUUID()) : null,
+      ...(input.hasPrompt
+        ? {
+            initialPrompt: {
+              status: "pending" as const,
+              clientMessageId: input.clientMessageId?.trim() || randomUUID(),
+            },
+          }
+        : {}),
     },
   };
+}
+function uncertainPrompt(
+  receipt: CreationPromptReceipt | undefined,
+): CreationPromptReceipt | undefined {
+  return receipt?.status === "pending"
+    ? { status: "unknown", clientMessageId: receipt.clientMessageId }
+    : receipt;
 }
 function identityFor(kind: string, key: string): string {
   return digest([kind, key]);

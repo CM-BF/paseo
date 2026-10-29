@@ -2112,7 +2112,7 @@ function PullRequestAction({ theme }: PluginSurfaceProps) {
 }
 ```
 
-The returned API covers projects, workspaces, agents, terminals, providers, and daemon config. See the [SDK API reference](/docs/sdk/reference) for its methods. Connection lifecycle methods are intentionally absent because Paseo owns the connection.
+The returned API covers projects, workspaces, agents, creations, schedules, terminals, providers, and daemon config. See the [SDK API reference](/docs/sdk/reference) for its methods. Connection lifecycle methods are intentionally absent because Paseo owns the connection.
 
 ### Discover hosts and target another host
 

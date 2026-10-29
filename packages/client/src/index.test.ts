@@ -266,6 +266,7 @@ test("createPaseoApi borrows daemon capabilities without exposing connection own
   expect(Object.keys(paseo).sort()).toEqual([
     "agents",
     "config",
+    "creations",
     "dispose",
     "hosts",
     "observeEvents",
@@ -2184,6 +2185,31 @@ test("agent reload reopens through the daemon RPC then returns the observed snap
       }),
     );
     expect(await read).toEqual({ agent: snapshot, project: null });
+  } finally {
+    await client.close();
+  }
+});
+
+test("public creation lookup preserves receipt scope and never calls create", async () => {
+  const { client, ws } = await connectClient({ creationLifecycle: true });
+  const initial = ws.sent.length;
+  try {
+    const read = client.creations.get({ kind: "workspace", idempotencyKey: "first-workspace" });
+    const request = parseSentSessionMessage(ws.sent.at(-1));
+    expect(request).toMatchObject({
+      type: "creation.subscribe.request",
+      kind: "workspace",
+      idempotencyKey: "first-workspace",
+      subscribe: false,
+    });
+    ws.message(
+      sessionMessage({
+        type: "creation.subscribe.response",
+        payload: { requestId: request.requestId, snapshot: null, error: null },
+      }),
+    );
+    expect(await read).toBeNull();
+    expect(ws.sent).toHaveLength(initial + 1);
   } finally {
     await client.close();
   }
