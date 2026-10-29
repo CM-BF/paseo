@@ -150,6 +150,7 @@ export default function contribute(server: PluginServerContext) {
     await agent.setModel("test-model");
     await agent.setThinkingOption(null);
     await agent.setFeature("test_feature", true);
+    await agent.updateInstructions({ systemPrompt: "Plugin personality", mcpServers: {} });
     const snapshot = await agent.refresh();
     const created = await paseo.schedules.create({
       name: "Plugin review", prompt: "Scheduled by a plugin handler",
@@ -177,8 +178,14 @@ export default function contribute(server: PluginServerContext) {
 }`,
   );
 
+  const turnConfigs: Array<{ systemPrompt?: string }> = [];
   const daemon = await createTestPaseoDaemon({
-    agentClients: { ...createTestAgentClients(), pi: createTestAgentClient("pi") },
+    agentClients: {
+      ...createTestAgentClients(),
+      pi: createTestAgentClient("pi", {
+        onStartTurn: (_prompt, config) => turnConfigs.push(config),
+      }),
+    },
   });
   const client = new DaemonClient({
     url: `ws://127.0.0.1:${daemon.port}/ws`,
@@ -231,6 +238,7 @@ export default function contribute(server: PluginServerContext) {
       feature: true,
       runStatus: "succeeded",
     });
+    expect(turnConfigs.at(-1)?.systemPrompt).toBe("Plugin personality");
     await client.removePlugin("paseo-api");
     const schedules = await client.scheduleList();
     expect(schedules.error).toBeNull();

@@ -11,6 +11,7 @@ import type { AgentPermissionResponse, AgentProviderNotice } from "@getpaseo/pro
 export type { AgentProviderNotice } from "@getpaseo/protocol/agent-types";
 import type {
   AgentSnapshotPayload,
+  AgentInstructionsUpdate,
   CreationSnapshot,
   CreateAgentRequestMessage,
   FetchWorkspacesRequestMessage,
@@ -127,6 +128,7 @@ export interface PaseoClientConfig {
 
 export type PaseoWorkspace = WorkspaceDescriptorPayload;
 export type PaseoAgent = AgentSnapshotPayload;
+export type PaseoAgentInstructionsUpdateOptions = AgentInstructionsUpdate;
 export type PaseoAgentListOptions = FetchAgentsOptions;
 export type PaseoProject = WorkspaceProjectDescriptorPayload;
 export type PaseoProjectListOptions = Omit<ProjectListRequestMessage, "type" | "requestId"> & {
@@ -398,6 +400,8 @@ export interface PaseoAgentHandle {
   setThinkingOption(thinkingOptionId: string | null): Promise<AgentProviderNotice | null>;
   /** Sets a provider feature advertised by the agent's features snapshot. */
   setFeature(featureId: string, value: unknown): Promise<void>;
+  /** Resumes the same idle conversation with new instructions; rejects while it or its children are busy. */
+  updateInstructions(options: PaseoAgentInstructionsUpdateOptions): Promise<PaseoAgent>;
   respondToPermission(options: PaseoAgentRespondToPermissionOptions): Promise<void>;
   /** Sends a prompt and resolves when that turn finishes or needs attention. */
   run(text: string, options?: PaseoAgentRunOptions): Promise<PaseoAgentRunResult>;
@@ -1024,6 +1028,10 @@ function createAgentHandleFactory(
       setThinkingOption: (thinkingOptionId) =>
         daemonClient.setAgentThinkingOption(id, thinkingOptionId),
       setFeature: (featureId, value) => daemonClient.setAgentFeature(id, featureId, value),
+      updateInstructions: async (options) => {
+        current = await daemonClient.updateAgentInstructions(id, options);
+        return current;
+      },
       respondToPermission: async ({ requestId, response }) => {
         await daemonClient.respondToPermission(id, requestId, response);
       },
