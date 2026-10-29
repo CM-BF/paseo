@@ -33,6 +33,7 @@ import {
   WorkspaceComposerEditingSessionsProvider,
 } from "@/composer/editing-session";
 import { useHostRuntimeSnapshot, useHosts } from "@/runtime/host-runtime";
+import { useSessionStore } from "@/stores/session-store";
 import type { Theme } from "@/styles/theme";
 import { AgentAsideAnchor, type AgentAsideOpening } from "./agent-aside-store";
 import { AgentAsideFocus } from "./agent-aside-focus";
@@ -125,6 +126,18 @@ function AsideView({
   const hosts = useHosts();
   const label = hosts.find((host) => host.serverId === serverId)?.label ?? serverId;
   const state = useMemo(() => createPluginClientStateSource(serverId), [serverId]);
+  const viewedTimelineSync = useSessionStore(
+    (sessionState) => sessionState.sessions[serverId]?.viewedTimelineSync ?? null,
+  );
+  useLayoutEffect(() => {
+    if (!viewedTimelineSync) return;
+    const sourceId = `plugin-aside:${tabId}`;
+    viewedTimelineSync.replaceVisibleAgentIds(sourceId, visible ? [agentId] : [], {
+      retainWhenHidden: false,
+    });
+    return () =>
+      viewedTimelineSync.replaceVisibleAgentIds(sourceId, [], { retainWhenHidden: false });
+  }, [viewedTimelineSync, tabId, visible, agentId]);
   const scope = useMemo(() => ({ active: false, opening }), [opening]);
   useLayoutEffect(() => {
     scope.active = true;
@@ -239,8 +252,14 @@ export function AgentAsideHost({
   const available = !!runtime?.client && runtime.connectionStatus === "online";
   const validOpening =
     opening &&
-    plugins.includes(opening.plugin) &&
-    opening.plugin.agentAsides.includes(opening.contribution)
+    !opening.plugin.lifetime.signal.aborted &&
+    plugins.some(
+      (plugin) =>
+        plugin.serverId === opening.plugin.serverId &&
+        plugin.id === opening.plugin.id &&
+        plugin.lifetime === opening.plugin.lifetime &&
+        plugin.agentAsides.includes(opening.contribution),
+    )
       ? opening
       : null;
 

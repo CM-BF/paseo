@@ -351,6 +351,38 @@ test("uses a tail fetch when an agent becomes visible", async () => {
   fetch.respond({ hasNewer: false });
 });
 
+test("transient aside sources release hidden demand while real tabs keep their own membership", async () => {
+  const world = new TimelineWorld();
+  world.sync.replaceVisibleAgentIds("real-tabs", ["parent", "shared-child"]);
+  world.sync.replaceVisibleAgentIds("aside", ["cold-child", "shared-child"], {
+    retainWhenHidden: false,
+  });
+  world.sync.setConnected(true);
+  const initial = await world.nextMembership();
+  expect(initial.agentIds).toEqual(["cold-child", "parent", "shared-child"]);
+  initial.succeed();
+  for (const agentId of initial.agentIds) {
+    (await world.nextFetch(agentId)).respond({ hasNewer: false });
+  }
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("cold-child")).toBe("ready"));
+  world.sync.replaceVisibleAgentIds("aside", [], { retainWhenHidden: false });
+  expect(world.sync.getAgentTimelineStatus("cold-child")).toBe("pending");
+  const hidden = await world.nextMembership();
+  expect(hidden.agentIds).toEqual(["parent", "shared-child"]);
+  hidden.succeed();
+  world.sync.replaceVisibleAgentIds("aside", ["cold-child"], { retainWhenHidden: false });
+  const reopened = await world.nextMembership();
+  expect(reopened.agentIds).toEqual(["cold-child", "parent", "shared-child"]);
+  reopened.succeed();
+  (await world.nextFetch("cold-child")).respond({ hasNewer: false });
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("cold-child")).toBe("ready"));
+  world.sync.replaceVisibleAgentIds("aside", [], { retainWhenHidden: false });
+  const closed = await world.nextMembership();
+  expect(closed.agentIds).toEqual(["parent", "shared-child"]);
+  closed.succeed();
+  world.sync.dispose();
+});
+
 test("loads the cache before choosing the authoritative network request", async () => {
   const world = new TimelineWorld();
   world.cacheGate = deferred<void>();

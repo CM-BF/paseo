@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { PluginAgentAsideHandle } from "@getpaseo/plugin/client";
+import type { InstalledPlugin } from "./types";
 import appPackage from "../../package.json";
 import { RetainedPanelActivity, useRetainedPanelActive } from "@/components/retained-panel";
 import {
@@ -13,6 +14,8 @@ import {
   usePaneFocus,
 } from "@/panels/pane-context";
 import { useConversationPresentation } from "@/panels/conversation-presentation";
+import { useSessionStore } from "@/stores/session-store";
+import { createViewedTimelineOwner } from "@/timeline/viewed-timeline-sync";
 import {
   ComposerEditingScope,
   ComposerEditingSessionsProvider,
@@ -29,6 +32,7 @@ const fixtures = vi.hoisted(() => ({
   })),
   navigate: vi.fn(),
   chromeNavigation: new Array<(input: { agentId: string }) => void>(),
+  runtimeInstallations: new Array<InstalledPlugin>(),
 }));
 vi.mock("@/runtime/host-runtime", () => {
   const client = { fetchAgent: fixtures.fetch };
@@ -51,14 +55,17 @@ vi.mock("@/constants/layout", async (original) => ({
   useIsCompactFormFactor: () => fixtures.compact,
 }));
 vi.mock("./client-runtime", () => ({
-  createPluginClientRuntime: () => ({
-    paseo: {},
-    rpc: async () => {},
-    openSurface: () => {},
-    openPanel: () => {},
-    addComposerPill: () => ({ update() {}, remove() {} }),
-    addHeaderButton: () => ({ update() {}, remove() {} }),
-  }),
+  createPluginClientRuntime: (plugin: InstalledPlugin) => {
+    fixtures.runtimeInstallations.push(plugin);
+    return {
+      paseo: {},
+      rpc: async () => {},
+      openSurface: () => {},
+      openPanel: () => {},
+      addComposerPill: () => ({ update() {}, remove() {} }),
+      addHeaderButton: () => ({ update() {}, remove() {} }),
+    };
+  },
 }));
 vi.mock("./host-navigation", () => ({
   usePluginHostNavigation: (_serverId: string, beforeNavigate?: () => void) => {
@@ -117,7 +124,11 @@ function NativeConversation(props: EmbeddedAgentConversationProps) {
     [],
   );
   const openToolFile = React.useCallback(
-    () => pane.openFileInWorkspace({ location: { path: "tool-output.txt" }, disposition: "main" }),
+    () =>
+      pane.openFileInWorkspace({
+        location: { path: "tool-output.txt" },
+        disposition: "main",
+      }),
     [pane],
   );
   React.useEffect(() => {
@@ -167,7 +178,10 @@ function render(serverId = "host-A", parentAgentId = "parent", visible = true) {
     root.render(
       <RetainedPanelActivity active={visible}>
         <PaneFocusProvider
-          value={createPaneFocusContextValue({ isWorkspaceFocused: true, isPaneFocused: true })}
+          value={createPaneFocusContextValue({
+            isWorkspaceFocused: true,
+            isPaneFocused: true,
+          })}
         >
           <ComposerEditingSessionsProvider>
             <WorkspaceComposerEditingSessionsProvider
@@ -193,9 +207,18 @@ function render(serverId = "host-A", parentAgentId = "parent", visible = true) {
 function install(serverId = "host-A", id = "topics") {
   pluginRegistry.installCatalog(
     serverId,
-    [{ id, requirements: { paseo: ">=" + appPackage.version }, clientBundle: bundle }],
+    [
+      {
+        id,
+        requirements: { paseo: ">=" + appPackage.version },
+        clientBundle: bundle,
+      },
+    ],
     {
-      client: new DaemonClient({ url: "ws://unused.test", clientId: "agent-aside-test" }),
+      client: new DaemonClient({
+        url: "ws://unused.test",
+        clientId: "agent-aside-test",
+      }),
       audio: { play: async () => 0 },
     },
   );
@@ -208,7 +231,11 @@ function install(serverId = "host-A", id = "topics") {
 async function open(agentId = "child", plugin = pluginRegistry.getSnapshot()[0]) {
   let handle: PluginAgentAsideHandle | undefined;
   await act(async () => {
-    handle = await openPluginAgentAside(plugin, { id: "topic", parentAgentId: "parent", agentId });
+    handle = await openPluginAgentAside(plugin, {
+      id: "topic",
+      parentAgentId: "parent",
+      agentId,
+    });
   });
   if (!handle) throw new Error("Missing open receipt");
   return handle;
@@ -237,6 +264,7 @@ beforeEach(() => {
   }));
   fixtures.navigate.mockReset();
   fixtures.chromeNavigation.length = 0;
+  fixtures.runtimeInstallations.length = 0;
   nativeCallbacks.length = 0;
   nativeMounts = 0;
   container = document.createElement("div");
@@ -278,6 +306,88 @@ it("binds chrome, native child pane and same-scroll header without changing the 
   expect(container.querySelector('[data-testid="native-conversation"]')).toBeNull();
   expect(container.querySelector('[data-testid="parent"]')?.textContent).toBe("Parent true/true");
   expect(fixtures.fetch).toHaveBeenCalledTimes(1);
+});
+
+it("accepts the runtime installation across registry presentation snapshots but fences replacement lifetimes", async () => {
+  const presentation = install();
+  const installation = fixtures.runtimeInstallations[0];
+  expect(installation).not.toBe(presentation);
+  expect(installation.lifetime).toBe(presentation.lifetime);
+  render();
+  const oldHandle = await open("original-child", installation);
+  expect(container.querySelector('[data-testid="native-conversation"]')?.textContent).toContain(
+    '"agentId":"original-child"',
+  );
+  // Another installation causes publish() to produce fresh locale presentation objects.
+  act(() => install("host-B"));
+  expect(pluginRegistry.getSnapshot().find((plugin) => plugin.serverId === "host-A")).not.toBe(
+    presentation,
+  );
+  expect(container.textContent).toContain("original-child");
+  act(() => pluginRegistry.removeHost("host-A"));
+  expect(container.querySelector('[data-testid="native-conversation"]')).toBeNull();
+  act(() => install());
+  const replacement = fixtures.runtimeInstallations.at(-1);
+  if (!replacement) throw new Error("Missing replacement installation");
+  expect(replacement.lifetime).not.toBe(installation.lifetime);
+  await open("replacement-child", replacement);
+  act(() => oldHandle.close());
+  expect(container.textContent).toContain("replacement-child");
+  await expect(open("stale-child", installation)).rejects.toThrow("unavailable");
+  expect(container.textContent).toContain("replacement-child");
+});
+
+it("registers a cold visible child with the real viewed-timeline owner and releases only its own demand", async () => {
+  const demanded: string[][] = [];
+  const prepared: string[] = [];
+  const owner = createViewedTimelineOwner({
+    serverId: "host-A",
+    replica: {
+      prepare: async (agentId) => {
+        prepared.push(agentId);
+      },
+      readCursor: () => undefined,
+      readRange: () => undefined,
+      timelineUpdated: () => {},
+    },
+    replaceDemandedAgentIds: (agentIds) => demanded.push(agentIds),
+    drainQueuedAgentMessage: () => {},
+    ports: {
+      observe: () => ({ ready: Promise.resolve(), release: async () => {} }),
+      readCursor: () => undefined,
+      fetchPage: async () => ({ hasNewer: false, endCursor: null }),
+      fetchLatestTail: async () => ({ hasNewer: false, endCursor: null }),
+      reportError: (error) => {
+        throw error;
+      },
+      schedule: () => () => {},
+    },
+  });
+  useSessionStore.getState().initializeSession("host-A", null);
+  useSessionStore.getState().setViewedTimelineSync("host-A", owner);
+  owner.setConnected(true);
+  owner.setActive(true);
+  owner.replaceVisibleAgentIds("actual-parent-pane", ["parent"]);
+  try {
+    install();
+    render();
+    await open("cold-child", fixtures.runtimeInstallations[0]);
+    expect(demanded.at(-1)).toEqual(["cold-child", "parent"]);
+    expect(prepared).toContain("cold-child");
+    render("host-A", "parent", false);
+    expect(demanded.at(-1)).toEqual(["parent"]);
+    render();
+    expect(demanded.at(-1)).toEqual(["cold-child", "parent"]);
+    click("Close topic");
+    expect(demanded.at(-1)).toEqual(["parent"]);
+    await open("replacement-child", fixtures.runtimeInstallations[0]);
+    expect(demanded.at(-1)).toEqual(["parent", "replacement-child"]);
+    act(() => pluginRegistry.removeHost("host-A"));
+    expect(demanded.at(-1)).toEqual(["parent"]);
+  } finally {
+    act(() => useSessionStore.getState().clearSession("host-A"));
+    owner.dispose();
+  }
 });
 
 it("retains the parent on compact layouts while giving only the aside visible input ownership", async () => {
@@ -392,7 +502,9 @@ it("keeps the last requested child when lookups finish out of order", async () =
   const rejected = expect(first).rejects.toThrow("target changed");
   await open("new-child", plugin);
   await act(async () =>
-    pending.resolve({ agent: { id: "old-child", workspaceId: "workspace:old-child" } }),
+    pending.resolve({
+      agent: { id: "old-child", workspaceId: "workspace:old-child" },
+    }),
   );
   await rejected;
   expect(container.textContent).toContain("new-child");
@@ -406,7 +518,11 @@ it("removes native UI on contribution removal and rejects old open requests afte
   await act(async () => plugin.cleanup());
   expect(container.querySelector('[data-testid="native-conversation"]')).toBeNull();
   await expect(
-    openPluginAgentAside(plugin, { id: "topic", parentAgentId: "parent", agentId: "child" }),
+    openPluginAgentAside(plugin, {
+      id: "topic",
+      parentAgentId: "parent",
+      agentId: "child",
+    }),
   ).rejects.toThrow("unavailable");
 });
 
@@ -441,14 +557,26 @@ it("contains plugin render errors with an independent usable close action", asyn
 it("validates parent anchor, registered contribution and distinct child before showing UI", async () => {
   const plugin = install();
   await expect(
-    openPluginAgentAside(plugin, { id: "topic", parentAgentId: "parent", agentId: "child" }),
+    openPluginAgentAside(plugin, {
+      id: "topic",
+      parentAgentId: "parent",
+      agentId: "child",
+    }),
   ).rejects.toThrow("Open the parent");
   render();
   await expect(
-    openPluginAgentAside(plugin, { id: "unknown", parentAgentId: "parent", agentId: "child" }),
+    openPluginAgentAside(plugin, {
+      id: "unknown",
+      parentAgentId: "parent",
+      agentId: "child",
+    }),
   ).rejects.toThrow("unavailable");
   await expect(
-    openPluginAgentAside(plugin, { id: "topic", parentAgentId: "parent", agentId: "parent" }),
+    openPluginAgentAside(plugin, {
+      id: "topic",
+      parentAgentId: "parent",
+      agentId: "parent",
+    }),
   ).rejects.toThrow("different");
   expect(fixtures.fetch).not.toHaveBeenCalled();
 });

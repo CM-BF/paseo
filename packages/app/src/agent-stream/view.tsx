@@ -1376,6 +1376,7 @@ function agentStreamViewPropsEqual(
   reasons.push(...collectAgentScreenAgentDiffs(left.context, right.context));
   if (left.streamItems !== right.streamItems) reasons.push("streamItems");
   if (left.streamHead !== right.streamHead) reasons.push("streamHead");
+  if (left.streamHeader !== right.streamHeader) reasons.push("streamHeader");
   if (left.pendingPermissions !== right.pendingPermissions) reasons.push("pendingPermissions");
   if (left.pendingMessageSubmissions !== right.pendingMessageSubmissions) {
     reasons.push("pendingMessageSubmissions");
