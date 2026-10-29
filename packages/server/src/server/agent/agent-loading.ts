@@ -56,6 +56,8 @@ export async function ensureUnarchivedAgentLoaded(
   }
 
   const agent = await ensureAgentLoaded(agentId, deps);
+  // A shared resume can finish before an archive already queued behind it commits.
+  await deps.agentManager.waitForAgentClose?.(agentId);
   const latestRecord = await deps.agentStorage.get(agentId);
   if (latestRecord?.archivedAt) {
     await deps.agentManager.closeAgent(agentId).catch((error: unknown) => {

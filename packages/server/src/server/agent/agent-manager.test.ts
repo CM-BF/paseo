@@ -11367,6 +11367,16 @@ test("a stored-only archive closes a shared resume before a later protected load
   const storage = new AgentStorage(join(workdir, "agents"), logger);
   const resumeStarted = deferred<void>();
   const resumeAllowed = deferred<void>();
+  const archiveWriting = deferred<void>();
+  const archiveAllowed = deferred<void>();
+  const upsert = storage.upsert.bind(storage);
+  vi.spyOn(storage, "upsert").mockImplementation(async (record) => {
+    if (record.archivedAt) {
+      archiveWriting.resolve();
+      await archiveAllowed.promise;
+    }
+    return upsert(record);
+  });
   const client = new (class extends TestAgentClient {
     override async resumeSession(
       handle: AgentPersistenceHandle,
@@ -11399,14 +11409,24 @@ test("a stored-only archive closes a shared resume before a later protected load
     });
     const archive = manager.archiveSnapshot(agent.id, new Date().toISOString());
     resumeAllowed.resolve();
-    await archive;
-
     await sharedLoad;
+    await archiveWriting.promise;
+    const whileWriting = await Promise.race([
+      protectedLoad.then(
+        () => "returned",
+        () => "rejected",
+      ),
+      new Promise<"pending">((resolve) => setImmediate(() => resolve("pending"))),
+    ]);
+    expect(whileWriting).toBe("pending");
+    archiveAllowed.resolve();
+    await archive;
     await expect(protectedLoad).rejects.toThrow(`Agent is archived: ${agent.id}`);
     expect(manager.getAgent(agent.id)).toBeNull();
     expect((await storage.get(agent.id))?.archivedAt).toEqual(expect.any(String));
   } finally {
     resumeAllowed.resolve();
+    archiveAllowed.resolve();
     await storage.flush().catch(() => undefined);
     rmSync(workdir, { recursive: true, force: true });
   }
