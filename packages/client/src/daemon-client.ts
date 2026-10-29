@@ -902,6 +902,7 @@ export interface CreateScheduleOptions {
           isolation?: "local" | "worktree";
           title?: string | null;
           providerOptions?: AgentSessionConfig["providerOptions"];
+          featureValues?: AgentSessionConfig["featureValues"];
           systemPrompt?: string;
           mcpServers?: AgentSessionConfig["mcpServers"];
         };

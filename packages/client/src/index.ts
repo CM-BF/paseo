@@ -7,7 +7,8 @@ export type { HostAdd, HostUpdate, HostSummary, HostDirectory } from "@getpaseo/
 import type { OwnedSubscription } from "./connection/index.js";
 export type { OwnedSubscription, SubscriptionObserver } from "./connection/index.js";
 import type { DaemonClientConfig } from "./daemon-client.js";
-import type { AgentPermissionResponse } from "@getpaseo/protocol/agent-types";
+import type { AgentPermissionResponse, AgentProviderNotice } from "@getpaseo/protocol/agent-types";
+export type { AgentProviderNotice } from "@getpaseo/protocol/agent-types";
 import type {
   AgentSnapshotPayload,
   CreationSnapshot,
@@ -35,6 +36,22 @@ import type {
   WorkspaceCreateRequest,
 } from "@getpaseo/protocol/messages";
 import { DaemonClient, type CreateAgentRequestOptions } from "./daemon-client.js";
+import { createScheduleActions, type PaseoScheduleActions } from "./schedules/index.js";
+export type {
+  PaseoScheduleActions,
+  PaseoScheduleCreateOptions,
+  PaseoScheduleInspectOptions,
+  PaseoScheduleUpdateOptions,
+  PaseoScheduleCreateResult,
+  PaseoScheduleListResult,
+  PaseoScheduleInspectResult,
+  PaseoScheduleLogsResult,
+  PaseoSchedulePauseResult,
+  PaseoScheduleResumeResult,
+  PaseoScheduleDeleteResult,
+  PaseoScheduleRunOnceResult,
+  PaseoScheduleUpdateResult,
+} from "./schedules/index.js";
 import {
   createTerminalActions,
   type PaseoTerminalActions,
@@ -375,6 +392,12 @@ export interface PaseoAgentHandle {
    */
   reload(options?: { requestId?: string }): Promise<PaseoAgentRefetchResult | null>;
   send(text: string, options?: PaseoAgentSendOptions): Promise<void>;
+  /** Changes the model within this agent's provider; null restores the default. */
+  setModel(modelId: string | null): Promise<void>;
+  /** Returns the provider notice, if any; null restores the default option. */
+  setThinkingOption(thinkingOptionId: string | null): Promise<AgentProviderNotice | null>;
+  /** Sets a provider feature advertised by the agent's features snapshot. */
+  setFeature(featureId: string, value: unknown): Promise<void>;
   respondToPermission(options: PaseoAgentRespondToPermissionOptions): Promise<void>;
   /** Sends a prompt and resolves when that turn finishes or needs attention. */
   run(text: string, options?: PaseoAgentRunOptions): Promise<PaseoAgentRunResult>;
@@ -500,6 +523,7 @@ export interface PaseoApi {
   dispose(): Promise<void>;
   observeEvents: DaemonClient["observeEvents"];
   readonly terminals: PaseoTerminalActions;
+  readonly schedules: PaseoScheduleActions;
   readonly workspaces: PaseoWorkspaceActions;
   readonly projects: PaseoProjectActions;
   readonly agents: PaseoAgentActions;
@@ -724,6 +748,7 @@ export function createPaseoApi(
     hosts: createHostActions(daemonClient, { own, signal: lifetime.signal, api: createPaseoApi }),
     observeEvents,
     terminals,
+    schedules: createScheduleActions(daemonClient),
     projects: {
       list: (options) => daemonClient.listProjects(options),
       subscribe: (handler) => {
@@ -995,6 +1020,10 @@ function createAgentHandleFactory(
       send: async (text, options) => {
         await daemonClient.sendAgentMessage(id, text, options);
       },
+      setModel: (modelId) => daemonClient.setAgentModel(id, modelId),
+      setThinkingOption: (thinkingOptionId) =>
+        daemonClient.setAgentThinkingOption(id, thinkingOptionId),
+      setFeature: (featureId, value) => daemonClient.setAgentFeature(id, featureId, value),
       respondToPermission: async ({ requestId, response }) => {
         await daemonClient.respondToPermission(id, requestId, response);
       },

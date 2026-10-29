@@ -1,5 +1,4 @@
 import type {
-  PluginHostProps,
   PluginOpenScreenInput,
   PluginPopoverProps,
   PluginScreenLocation,
@@ -39,6 +38,7 @@ import type { PluginSidebarSection } from "../types";
 import { SidebarItemFrameContext, type SidebarItemFrame } from "./frame";
 import { LegacyPluginSidebarRow } from "./legacy";
 import { resolvePluginPlatform } from "../platform";
+import { usePluginHostNavigation } from "../host-navigation";
 
 export { SidebarRow, SidebarSeparator } from "./kit";
 
@@ -168,21 +168,26 @@ function SidebarItemContent({
   const compact = useIsCompactFormFactor();
   const hostLabel =
     hosts.find((host) => host.serverId === plugin.serverId)?.label ?? plugin.serverId;
+  const beforeNavigate = useCallback(() => {
+    showPopover(null);
+    onBeforeNavigate?.();
+  }, [onBeforeNavigate, showPopover]);
+  const navigation = usePluginHostNavigation(plugin.serverId, beforeNavigate);
 
-  const hostProps = useMemo<PluginHostProps>(
+  const hostProps = useMemo(
     () => ({
       theme,
       host: { id: plugin.serverId, label: hostLabel },
       layout: { compact, platform: resolvePluginPlatform() },
+      navigation,
     }),
-    [compact, hostLabel, plugin.serverId, theme],
+    [compact, hostLabel, navigation, plugin.serverId, theme],
   );
   const openScreen = useCallback(
     (input: PluginOpenScreenInput) => {
       const { screenId, params } = parsePluginOpenScreenInput(plugin, input);
       rememberPluginContributionHost(pluginScreensHostKey(plugin.id), plugin.serverId);
-      showPopover(null);
-      onBeforeNavigate?.();
+      beforeNavigate();
       router.push(
         buildPluginSurfaceRoute(
           plugin.serverId,
@@ -192,7 +197,7 @@ function SidebarItemContent({
         ),
       );
     },
-    [onBeforeNavigate, plugin, showPopover],
+    [beforeNavigate, plugin],
   );
   const openPopover = useCallback(
     (Content: PopoverContent) => {
