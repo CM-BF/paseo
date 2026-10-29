@@ -254,6 +254,33 @@ test("createPaseoClient exposes workspace list through the daemon client", async
   await client.close();
 });
 
+test.each([undefined, false, true])(
+  "native skill support follows this host handshake, not SDK method presence (%s)",
+  async (nativeSkillMounts) => {
+    const { client, ws } = await connectClient(
+      nativeSkillMounts === undefined ? {} : { nativeSkillMounts },
+    );
+    const before = ws.sent.length;
+    expect(client.agents.supportsNativeSkillMounts()).toBe(nativeSkillMounts === true);
+    expect(ws.sent).toHaveLength(before);
+    ws.onclose?.({ code: 1006, reason: "Connection lost" });
+    expect(client.agents.supportsNativeSkillMounts()).toBe(false);
+    await client.close();
+    expect(client.agents.supportsNativeSkillMounts()).toBe(false);
+  },
+);
+
+test("native skill support is false before connecting and after API disposal", async () => {
+  const client = createPaseoClient({ url: "ws://daemon.test" });
+  expect(client.agents.supportsNativeSkillMounts()).toBe(false);
+  await client.close();
+  const connected = await connectClient({ nativeSkillMounts: true });
+  expect(connected.client.agents.supportsNativeSkillMounts()).toBe(true);
+  await connected.client.dispose();
+  expect(connected.client.agents.supportsNativeSkillMounts()).toBe(false);
+  await connected.client.close();
+});
+
 test("createPaseoApi borrows daemon capabilities without exposing connection ownership", () => {
   const daemonClient = new DaemonClient({
     url: "ws://daemon.test",
@@ -550,16 +577,21 @@ test("exact-turn steering exposes an uncertain receipt without retrying delivery
 });
 
 test("instruction updates refresh the handle only on an accepted response", async () => {
-  const { client, ws } = await connectClient({ agentInstructionsUpdate: true });
+  const { client, ws } = await connectClient({
+    agentInstructionsUpdate: true,
+    nativeSkillMounts: true,
+  });
   const before = createAgent();
   const agent = client.agents.ref(before);
-  const failed = agent.updateInstructions({ systemPrompt: "New", mcpServers: {} });
+  const skillMounts = [{ directory: "/projection" }];
+  const failed = agent.updateInstructions({ systemPrompt: "New", mcpServers: {}, skillMounts });
   const request = parseSentSessionMessage(ws.sent.at(-1));
   expect(request).toMatchObject({
     type: "agent.update_instructions.request",
     agentId: agent.id,
     systemPrompt: "New",
     mcpServers: {},
+    skillMounts,
   });
   ws.message(
     sessionMessage({
@@ -1054,10 +1086,11 @@ test("agents.create forwards internal on the request, outside the agent config",
     providersSnapshotCwd: true,
     ownedSubscriptions: true,
     backgroundWorkspaces: true,
+    nativeSkillMounts: true,
   });
 
   const createPromise = client.agents.create({
-    config: { provider: "codex/gpt-5.4" },
+    config: { provider: "codex/gpt-5.4", skillMounts: [{ directory: "/projection" }] },
     cwd: "/repo/sdk",
     title: "Summary helper",
     background: true,
@@ -1066,7 +1099,13 @@ test("agents.create forwards internal on the request, outside the agent config",
   const request = parseSentSessionMessage(ws.sent.at(-1));
   expect(request).toMatchObject({
     type: "create_agent_request",
-    config: { provider: "codex", model: "gpt-5.4", cwd: "/repo/sdk", title: "Summary helper" },
+    config: {
+      provider: "codex",
+      model: "gpt-5.4",
+      cwd: "/repo/sdk",
+      title: "Summary helper",
+      skillMounts: [{ directory: "/projection" }],
+    },
     background: true,
     autoArchive: true,
   });

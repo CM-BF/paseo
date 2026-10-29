@@ -52,12 +52,13 @@ nav: API 参考
 
 ## `client.agents` {#clientagents}
 
-| 方法                 | 结果                   | 行为                                                                                      |
-| -------------------- | ---------------------- | ----------------------------------------------------------------------------------------- |
-| `list(options?)`     | `PaseoAgentListResult` | 列出一页 Agent。`scope`、`filter`、`sort`、`page` 和 `subscribe` 与 daemon 目录查询一致。 |
-| `create(options)`    | `PaseoAgentHandle`     | 为 `cwd` 创建一个 Agent 和一个新的工作区。需要 `config`。                                 |
-| `ref(agentOrId)`     | `PaseoAgentHandle`     | 创建一个本地句柄，不发起请求。                                                            |
-| `subscribe(handler)` | 取消订阅函数           | 此 API 实例的本地监听器。需要一个由你持有的 `list({ subscribe: {} })` 观察。              |
+| 方法                          | 结果                   | 行为                                                                                                           |
+| ----------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `supportsNativeSkillMounts()` | `boolean`              | 当前已连接主机是否声明支持原生技能挂载；握手前、断连/释放后及旧主机返回 false。Provider 支持在实际使用时校验。 |
+| `list(options?)`              | `PaseoAgentListResult` | 列出一页 Agent。`scope`、`filter`、`sort`、`page` 和 `subscribe` 与 daemon 目录查询一致。                      |
+| `create(options)`             | `PaseoAgentHandle`     | 为 `cwd` 创建一个 Agent 和一个新的工作区。需要 `config`。                                                      |
+| `ref(agentOrId)`              | `PaseoAgentHandle`     | 创建一个本地句柄，不发起请求。                                                                                 |
+| `subscribe(handler)`          | 取消订阅函数           | 此 API 实例的本地监听器。需要一个由你持有的 `list({ subscribe: {} })` 观察。                                   |
 
 `list({ subscribe: {} })` 还会返回一个 `subscriptionId` 和一个由你持有的 `subscription`。它的 `subscribe({ snapshot, update, error? })` 回调会先收到快照，再收到限定范围的线上更新；`release()` 结束这次观察。支持该能力的 daemon 会分配 ID，并让各个观察相互独立。较旧的 daemon 使用本地 ID 及其既有的共享投递行为。普通的列表调用不会创建观察。工作区列表遵循同样的契约。见[事件](./events.md)。
 
@@ -69,16 +70,17 @@ nav: API 参考
 
 `config` 接受：
 
-| 字段               | 类型                      | 含义                                                                          |
-| ------------------ | ------------------------- | ----------------------------------------------------------------------------- |
-| `provider`         | `string`                  | 必填的 `provider/model` 选择。                                                |
-| `modeId`           | `string`                  | Provider 的运行模式或权限模式。                                               |
-| `thinkingOptionId` | `string`                  | Provider 的推理级别。                                                         |
-| `featureValues`    | `Record<string, unknown>` | 通过 `providers.listFeatures` 发现的功能的取值。                              |
-| `options`          | JSON 对象                 | Provider 原生设置，严格校验。见 [Provider 选项](/docs/sdk/provider-options)。 |
-| `systemPrompt`     | `string`                  | 额外的系统或开发者指令。                                                      |
-| `mcpServers`       | MCP 服务器映射            | 作用于会话的 MCP 服务器。                                                     |
-| `toolPolicy`       | MCP 工具策略              | MCP 工具的精确预批准规则。                                                    |
+| 字段               | 类型                           | 含义                                                                                            |
+| ------------------ | ------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `provider`         | `string`                       | 必填的 `provider/model` 选择。                                                                  |
+| `modeId`           | `string`                       | Provider 的运行模式或权限模式。                                                                 |
+| `thinkingOptionId` | `string`                       | Provider 的推理级别。                                                                           |
+| `featureValues`    | `Record<string, unknown>`      | 通过 `providers.listFeatures` 发现的功能的取值。                                                |
+| `options`          | JSON 对象                      | Provider 原生设置，严格校验。见 [Provider 选项](/docs/sdk/provider-options)。                   |
+| `systemPrompt`     | `string`                       | 额外的系统或开发者指令。                                                                        |
+| `mcpServers`       | MCP 服务器映射                 | 作用于会话的 MCP 服务器。                                                                       |
+| `skillMounts`      | `Array<{ directory: string }>` | 持久原生技能投影目录，需要主机支持。见[原生技能挂载](./agents.md#update-session-instructions)。 |
+| `toolPolicy`       | MCP 工具策略                   | MCP 工具的精确预批准规则。                                                                      |
 
 ### Agent 句柄 {#agent-handle}
 
@@ -116,7 +118,7 @@ nav: API 参考
 | `archive()`                           | `{ archivedAt }`                       | 软删除 Agent 并关闭它的运行时。                                                                                                                                                                 |
 | `detach()`                            | `Promise<void>`                        | 解除父子关系，但不停止 Agent。                                                                                                                                                                  |
 
-`updateInstructions({ systemPrompt, mcpServers? })` 需要支持 `agentInstructionsUpdate` 的主机。`systemPrompt` 是完整替换值，可以为空；省略 `mcpServers` 保留现有配置，传 `{}` 清空它。操作在同一个持久 Provider 会话上应用配置，保留 Agent ID、时间线及其 epoch、工作区和标签，不发送新的提示词。它会重启 Provider 运行时；Provider 未向 Paseo 报告的后台工作无法检测，因此不要在依赖这类进程时调用。
+`updateInstructions({ systemPrompt, mcpServers?, skillMounts? })` 需要支持 `agentInstructionsUpdate` 的主机。`systemPrompt` 是完整替换值，可以为空；省略 `mcpServers` 保留现有配置，传 `{}` 清空它。主机支持 `nativeSkillMounts` 时，省略 `skillMounts` 保留已有挂载，`[]` 清除挂载；替换沿用相同的空闲准入和失败恢复。操作在同一个持久 Provider 会话上应用配置，保留 Agent ID、时间线及其 epoch、工作区和标签，不发送新的提示词。它会重启 Provider 运行时；Provider 未向 Paseo 报告的后台工作无法检测，因此不要在依赖这类进程时调用。
 
 调用会拒绝正在运行、初始化或等待权限的 Agent，以及仍有活动子 Agent 的会话；检查和更新期间会阻止新任务进入。错误的 `code` 为 `busy`、`permission_pending`、`active_children`、`persistence_unavailable` 或 `update_failed`；旧主机返回 `unsupported_capability`，不发送不兼容请求。只有成功返回才表示配置已应用。失败后旧配置保留；如果运行时关闭或注册失败，需重试此调用或在 Paseo 中 Reload，才能继续发送新任务。参见[更新会话指令](./agents.md#update-session-instructions)。
 

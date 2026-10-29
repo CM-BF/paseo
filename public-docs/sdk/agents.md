@@ -196,6 +196,43 @@ const snapshot = await agent.updateInstructions({
 console.log(snapshot.id);
 ```
 
+Native skill projections can be added when creating an agent with
+`config.skillMounts: [{ directory: "/absolute/plugin-data/projection" }]`, or supplied to the
+same idle `updateInstructions` operation. They require host feature `nativeSkillMounts`; older
+hosts are rejected before a request is sent. Omit the field to preserve existing mounts, or use
+`[]` in an update to clear them. The full `systemPrompt` is still required by an instruction update.
+
+For plugins that may bundle an older SDK, check the public method on the **same API instance**
+used for creation or update. An older bundled schema may silently drop fields it does not know:
+
+```ts
+if (
+  typeof client.agents.supportsNativeSkillMounts !== "function" ||
+  !client.agents.supportsNativeSkillMounts()
+) {
+  throw new Error("Update the SDK and connect to a host with native skill mount support.");
+}
+```
+
+The method reads that connection's advertised capability and returns false while disconnected.
+A plugin's host-provided `context.paseo` and its own bundled Node client are separate API instances;
+support on one does not certify the other. This reports host support, not a native provider's catalog.
+
+A projection contains `skills/<name>/SKILL.md` and a `.claude-plugin/plugin.json` with only
+`name`, optional `version`, and optional `description`. Hooks, agents, commands, MCP/LSP config,
+noncanonical skill filenames, and manifest/skill-root symlinks escaping the projection are rejected. Keep projections
+in durable plugin data, not a checkout that an upgrade can remove. Skills retain their original
+resources and permissions; a mount does not preapprove tools or replace user/project skills.
+
+Codex mounts are added to the agent's own app-server process and checked against its native
+catalog before starting or resuming a thread. Native child threads in that process share them;
+other Paseo agents do not. Claude uses session-local plugins with MCP discovery disabled.
+Missing projections, undiscovered Codex skills and unsupported providers fail instead of silently
+running without skills. Runtime roots are reapplied on resume. Directory references are not content
+snapshots: explicitly mounting the same mutable directory in two agents shares those files.
+No global provider home is changed. Actual skill loading still depends on the native model/tool
+flow; catalog visibility alone is not proof that a skill was read or executed.
+
 Mark application settings as applied only after the call succeeds. The daemon keeps the same durable conversation and timeline, and refuses active turns, pending permissions, and active children without interrupting them. This operation restarts the Provider runtime and cannot preserve background work the Provider does not report. See the [API reference](./reference.md#agent-handle) for error codes and recovery.
 
 ## Create a subagent

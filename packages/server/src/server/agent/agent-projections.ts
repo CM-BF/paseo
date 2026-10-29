@@ -395,6 +395,7 @@ function buildSerializableConfig(config: AgentSessionConfig): SerializableAgentC
   if (config.systemPrompt) {
     serializable.systemPrompt = config.systemPrompt;
   }
+  if (config.skillMounts !== undefined) serializable.skillMounts = config.skillMounts;
   if (config.mcpServers) {
     serializable.mcpServers = config.mcpServers;
   }

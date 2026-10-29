@@ -43,6 +43,7 @@ function buildManagedAgentConfig(
     toolPolicy: configOverrides.toolPolicy,
     systemPrompt: configOverrides.systemPrompt,
     mcpServers: configOverrides.mcpServers,
+    skillMounts: configOverrides.skillMounts,
   };
   if (Object.prototype.hasOwnProperty.call(configOverrides, "featureValues")) {
     config.featureValues = configOverrides.featureValues;
@@ -193,6 +194,16 @@ describe("AgentStorage", () => {
     const [persisted] = await reloaded.list();
     expect(persisted.cwd).toBe("/tmp/project");
     expect(persisted.config?.providerOptions).toEqual({ allowedTools: ["Read"] });
+  });
+
+  test("skill mount configuration survives storage and both restore paths", async () => {
+    const skillMounts = [{ directory: "/plugin-data/skills" }];
+    await storage.applySnapshot(createManagedAgent({ config: { skillMounts } }));
+    await storage.flush();
+    const record = await new AgentStorage(storagePath, logger).get("agent-test");
+    expect(record?.config?.skillMounts).toEqual(skillMounts);
+    expect(buildConfigOverrides(record!)).toMatchObject({ skillMounts });
+    expect(buildSessionConfig(record!)).toMatchObject({ skillMounts });
   });
 
   test("applySnapshot stores and reloads featureValues when present", async () => {

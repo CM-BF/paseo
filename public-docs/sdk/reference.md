@@ -55,12 +55,13 @@ completion. See [creation recovery](./agents.md#recover-a-creation-without-resen
 
 ## `client.agents`
 
-| Method               | Result                 | Behavior                                                                                                     |
-| -------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `list(options?)`     | `PaseoAgentListResult` | Lists a page of agents. `scope`, `filter`, `sort`, `page`, and `subscribe` match the daemon directory query. |
-| `create(options)`    | `PaseoAgentHandle`     | Creates an agent and a fresh workspace for `cwd`. Requires `config`.                                         |
-| `ref(agentOrId)`     | `PaseoAgentHandle`     | Creates a local handle without fetching.                                                                     |
-| `subscribe(handler)` | Unsubscribe function   | Local listener for this API instance. Requires an owned `list({ subscribe: {} })` observation.               |
+| Method                        | Result                 | Behavior                                                                                                                                                                |
+| ----------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `supportsNativeSkillMounts()` | `boolean`              | Whether this connected host advertises native skill mounts; false before handshake, after disconnect/disposal, or on an older host. Provider support is checked on use. |
+| `list(options?)`              | `PaseoAgentListResult` | Lists a page of agents. `scope`, `filter`, `sort`, `page`, and `subscribe` match the daemon directory query.                                                            |
+| `create(options)`             | `PaseoAgentHandle`     | Creates an agent and a fresh workspace for `cwd`. Requires `config`.                                                                                                    |
+| `ref(agentOrId)`              | `PaseoAgentHandle`     | Creates a local handle without fetching.                                                                                                                                |
+| `subscribe(handler)`          | Unsubscribe function   | Local listener for this API instance. Requires an owned `list({ subscribe: {} })` observation.                                                                          |
 
 `list({ subscribe: {} })` also returns a `subscriptionId` and an owned `subscription`. Its `subscribe({ snapshot, update, error? })` callbacks receive the snapshot before scoped wire updates; `release()` ends that observation. Capable daemons assign the ID and keep observations independent. Older daemons use local IDs and their established shared delivery behavior. Plain lists create no observation. The same contract applies to workspace lists. See [events](./events.md).
 
@@ -73,16 +74,17 @@ See [background workspaces](./workspaces.md) for caller inheritance and inclusiv
 
 `config` accepts:
 
-| Field              | Type                      | Meaning                                                                                           |
-| ------------------ | ------------------------- | ------------------------------------------------------------------------------------------------- |
-| `provider`         | `string`                  | Required `provider/model` selection.                                                              |
-| `modeId`           | `string`                  | Provider operating or permission mode.                                                            |
-| `thinkingOptionId` | `string`                  | Provider reasoning level.                                                                         |
-| `featureValues`    | `Record<string, unknown>` | Values for features discovered through `providers.listFeatures`.                                  |
-| `options`          | JSON object               | Provider-native settings, strictly validated. See [Provider options](/docs/sdk/provider-options). |
-| `systemPrompt`     | `string`                  | Additional system or developer instructions.                                                      |
-| `mcpServers`       | MCP server map            | Session-scoped MCP servers.                                                                       |
-| `toolPolicy`       | MCP tool policy           | Exact preapproval rules for MCP tools.                                                            |
+| Field              | Type                           | Meaning                                                                                                                           |
+| ------------------ | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `provider`         | `string`                       | Required `provider/model` selection.                                                                                              |
+| `modeId`           | `string`                       | Provider operating or permission mode.                                                                                            |
+| `thinkingOptionId` | `string`                       | Provider reasoning level.                                                                                                         |
+| `featureValues`    | `Record<string, unknown>`      | Values for features discovered through `providers.listFeatures`.                                                                  |
+| `options`          | JSON object                    | Provider-native settings, strictly validated. See [Provider options](/docs/sdk/provider-options).                                 |
+| `systemPrompt`     | `string`                       | Additional system or developer instructions.                                                                                      |
+| `mcpServers`       | MCP server map                 | Session-scoped MCP servers.                                                                                                       |
+| `skillMounts`      | `Array<{ directory: string }>` | Durable native skill projection roots; requires host support. See [native skill mounts](./agents.md#update-session-instructions). |
+| `toolPolicy`       | MCP tool policy                | Exact preapproval rules for MCP tools.                                                                                            |
 
 ### Agent handle
 
@@ -120,7 +122,7 @@ See [background workspaces](./workspaces.md) for caller inheritance and inclusiv
 | `archive()`                           | `{ archivedAt }`                       | Soft-deletes the agent and closes its runtime.                                                                                                                                                                                                  |
 | `detach()`                            | `Promise<void>`                        | Removes the parent relationship without stopping the agent.                                                                                                                                                                                     |
 
-`updateInstructions({ systemPrompt, mcpServers? })` requires a host with `agentInstructionsUpdate` support. `systemPrompt` is a full replacement and may be empty; omit `mcpServers` to preserve the current configuration or pass `{}` to clear it. The operation resumes the same durable Provider conversation, preserving the Agent ID, timeline and epoch, workspace, and labels, without sending a prompt. It restarts the Provider runtime. Background work that the Provider does not report to Paseo cannot be detected, so avoid updating while relying on that work.
+`updateInstructions({ systemPrompt, mcpServers?, skillMounts? })` requires a host with `agentInstructionsUpdate` support. `systemPrompt` is a full replacement and may be empty; omit `mcpServers` to preserve the current configuration or pass `{}` to clear it. With `nativeSkillMounts` support, omit `skillMounts` to preserve mounts or pass `[]` to clear them; replacements use the same idle admission and recovery. The operation resumes the same durable Provider conversation, preserving the Agent ID, timeline and epoch, workspace, and labels, without sending a prompt. It restarts the Provider runtime. Background work that the Provider does not report to Paseo cannot be detected, so avoid updating while relying on that work.
 
 The call rejects running, initializing, or permission-blocked agents and agents with active children. New work cannot enter during its checks and update. Errors have a `code` of `busy`, `permission_pending`, `active_children`, `persistence_unavailable`, or `update_failed`; older hosts return `unsupported_capability` without receiving an incompatible request. Only a successful result means the configuration applied. Failures preserve the old configuration; after a runtime-close or registration failure, retry this call or use Reload in Paseo before sending new work. See [update session instructions](./agents.md#update-session-instructions).
 

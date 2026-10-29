@@ -1,3 +1,9 @@
+import {
+  NativeSkillMountError,
+  validateNativeSkillMounts,
+  assertNativeSkillCatalog,
+  type ValidatedNativeSkillMount,
+} from "../native-skill-mounts.js";
 import { validateProviderOptions } from "../provider-options.js";
 import {
   getAgentStreamEventTurnId,
@@ -3634,6 +3640,7 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.connectionState = "history-ready";
       return;
     }
+    const skillMounts = await validateNativeSkillMounts(this.config.skillMounts);
     const child = await this.spawnAppServer();
     const client = new CodexAppServerClient(child, this.logger, () => this.traceContext());
     if (this.closed) {
@@ -3653,13 +3660,30 @@ export class CodexAppServerAgentSession implements AgentSession {
       );
       this.threadRollbackAvailable = codexServerHasThreadRollback(initialized?.userAgent);
       client.notify("initialized", {});
+      // This process belongs to one Paseo agent. Native child threads share its skills.
+      // Reapply before resuming: resume may start native background work immediately.
+      if (skillMounts.length) {
+        try {
+          await client.request("skills/extraRoots/set", {
+            extraRoots: skillMounts.map((mount) => mount.skillsDirectory),
+          });
+        } catch (error) {
+          if (error instanceof CodexAppServerRpcError && error.code === -32601) {
+            throw new NativeSkillMountError(
+              "Installed Codex does not support runtime skill mounts",
+              { cause: error, unsupported: true },
+            );
+          }
+          throw error;
+        }
+      }
 
       this.speedModels =
         CodexModelListResponseSchema.parse(await client.request("model/list", {})).data ?? [];
       this.reconcileServiceTier();
       await this.loadResolvedWorkspaceWrite();
       await this.loadCollaborationModes();
-      await this.loadSkills();
+      await this.loadSkills(skillMounts);
 
       if (this.currentThreadId) {
         await this.ensureThreadLoaded();
@@ -3772,7 +3796,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.refreshResolvedCollaborationMode();
   }
 
-  private async loadSkills(): Promise<void> {
+  private async loadSkills(mounts: readonly ValidatedNativeSkillMount[] = []): Promise<void> {
     if (!this.client) return;
     try {
       const response = toObjectRecord(
@@ -3788,6 +3812,7 @@ export class CodexAppServerAgentSession implements AgentSession {
         allSkills.push(...list);
       }
       this.cachedSkills = enabledCodexSkills(allSkills);
+      assertNativeSkillCatalog(mounts, this.cachedSkills);
     } catch (error) {
       this.logger.trace(
         {
@@ -3800,6 +3825,7 @@ export class CodexAppServerAgentSession implements AgentSession {
         "provider.codex.metadata.skills_failed",
       );
       this.cachedSkills = null;
+      if (mounts.length) throw error;
     }
   }
 
@@ -4952,6 +4978,7 @@ export class CodexAppServerAgentSession implements AgentSession {
         toolPolicy: this.config.toolPolicy,
         systemPrompt: this.config.systemPrompt,
         mcpServers: this.config.mcpServers,
+        skillMounts: this.config.skillMounts,
         asyncQuestions: this.asyncQuestions.serialize(),
       },
     };

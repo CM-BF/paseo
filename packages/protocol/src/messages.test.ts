@@ -659,3 +659,26 @@ test.each(["all", "base", "uncommitted"] as const)(
     expect(parsed.attachments).toEqual([attachment]);
   },
 );
+
+test("native skill mount updates preserve omitted versus cleared mounts and reject capability injection", () => {
+  const request = {
+    type: "agent.update_instructions.request",
+    requestId: "skills",
+    agentId: "agent",
+    systemPrompt: "same",
+  };
+  expect(SessionInboundMessageSchema.parse(request)).not.toHaveProperty("skillMounts");
+  expect(SessionInboundMessageSchema.parse({ ...request, skillMounts: [] })).toHaveProperty(
+    "skillMounts",
+    [],
+  );
+  expect(
+    SessionInboundMessageSchema.parse({ ...request, skillMounts: [{ directory: "/projection" }] }),
+  ).toHaveProperty("skillMounts", [{ directory: "/projection" }]);
+  expect(
+    SessionInboundMessageSchema.safeParse({
+      ...request,
+      skillMounts: [{ directory: "/projection", hooks: {} }],
+    }).success,
+  ).toBe(false);
+});

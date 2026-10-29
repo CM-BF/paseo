@@ -453,3 +453,19 @@ test("read-only lookup keeps the durable first-prompt receipt after its agent is
     "Previously created agent no longer exists",
   );
 });
+
+test("creation receipts bind native skill mounts and never replay a different projection", async () => {
+  const f = await fixture();
+  const request = {
+    config: { provider: "codex", cwd: "/project", skillMounts: [{ directory: "/skills/a" }] },
+  };
+  const input: CreationInput = { ...f.input, kind: "agent", request };
+  f.provider.resolve();
+  await f.service.create(input);
+  await expect(
+    f.service.create({
+      ...input,
+      request: { config: { ...request.config, skillMounts: [{ directory: "/skills/b" }] } },
+    }),
+  ).rejects.toThrow("agent_request_key_conflict");
+});

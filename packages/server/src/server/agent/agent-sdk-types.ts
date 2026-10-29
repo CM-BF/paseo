@@ -5,6 +5,7 @@ import type {
   AgentProviderNotice,
   AgentTaskItem,
   JsonValue,
+  NativeSkillMount,
   ProviderOptions,
   ToolPolicy,
 } from "@getpaseo/protocol/agent-types";
@@ -611,6 +612,7 @@ export interface AgentSessionConfig {
   providerOptions?: ProviderOptions;
   toolPolicy?: ToolPolicy;
   mcpServers?: Record<string, McpServerConfig>;
+  skillMounts?: NativeSkillMount[];
   /**
    * Internal agents are hidden from listings and don't trigger notifications.
    * They are used for ephemeral system tasks like commit/PR generation.

@@ -512,6 +512,11 @@ export interface ToolPolicy {
   preapproved: McpToolRef[];
 }
 
+/** A local skill-only projection. Native child agents may share its provider runtime. */
+export interface NativeSkillMount {
+  directory: string;
+}
+
 export interface AgentSessionConfig {
   provider: AgentProvider;
   cwd: string;
@@ -528,6 +533,7 @@ export interface AgentSessionConfig {
   providerOptions?: ProviderOptions;
   toolPolicy?: ToolPolicy;
   mcpServers?: Record<string, McpServerConfig>;
+  skillMounts?: NativeSkillMount[];
   /**
    * Internal agents are hidden from listings and don't trigger notifications.
    * They are used for ephemeral system tasks like commit/PR generation.

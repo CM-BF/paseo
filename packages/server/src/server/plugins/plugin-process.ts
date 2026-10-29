@@ -283,6 +283,7 @@ export function createPluginWorker(options: {
         )
       : null;
     const contributedCleanup = contribute({
+      paseo,
       handle: (contract, handler) =>
         register(contract, (input, context) => handler(contract.input.parse(input), context)),
       registerProvider,

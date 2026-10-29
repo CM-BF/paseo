@@ -361,8 +361,11 @@ RPC contracts validate inputs and outputs in both the app and plugin subprocess.
 typed async function. Use the host-provided `@tanstack/react-query` for request state and caching;
 Paseo gives each plugin installation its own query client.
 
-`usePaseo()` and the handler's `{ paseo }` context expose the same `PaseoApi`: projects,
+`usePaseo()`, server setup's `server.paseo`, and the handler's `{ paseo }` context expose the same `PaseoApi`: projects,
 workspaces, agents, terminals, providers, and daemon config. They do not expose connection lifecycle.
+The server runtime connects before calling `contribute`; its API is available to background services
+without a preceding UI request or hook. Server setup and handlers share that installation's API,
+which the runtime disposes on shutdown. See [server setup lifetime](../public-docs/plugins/reference.md#entry-point-and-cleanup).
 
 `usePaseo()` is the plugin's one client: `InstalledPlugin.paseo`, created with the installation in
 `packages/app/src/plugins/registry.ts` over the host's existing connection and passed to setup as

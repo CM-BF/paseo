@@ -28,6 +28,8 @@ export interface PluginSettings<Schema extends ZodType> {
 }
 
 export interface PluginServerContext extends PluginLifecycleRegistration {
+  /** Connected host-owned API, available before any RPC or hook. Its lifetime ends with this installation. */
+  readonly paseo: PaseoApi;
   registerSettings<Schema extends ZodType>(
     definition: import("../settings.js").SettingsDefinition<Schema>,
   ): PluginSettings<Schema>;

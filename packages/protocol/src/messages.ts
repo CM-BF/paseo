@@ -465,6 +465,16 @@ const McpServerConfigSchema = z.discriminatedUnion("type", [
   McpSseServerConfigSchema,
 ]);
 
+export const NativeSkillMountsSchema = z
+  .array(
+    z
+      .object({
+        directory: z.string().min(1),
+      })
+      .strict(),
+  )
+  .max(32);
+
 const ProviderOptionsSchema = z.record(z.string(), z.unknown());
 
 const McpToolRefSchema = z
@@ -493,6 +503,7 @@ const AgentSessionConfigSchema = z.object({
   toolPolicy: ToolPolicySchema.optional(),
   systemPrompt: z.string().optional(),
   mcpServers: z.record(z.string(), McpServerConfigSchema).optional(),
+  skillMounts: NativeSkillMountsSchema.optional(),
 });
 
 const AgentPermissionUpdateSchema = z.record(z.string(), z.unknown());
@@ -2076,6 +2087,7 @@ export const AgentConfigApplyResponseMessageSchema = z.object({
 export const AgentInstructionsUpdateSchema = z.object({
   systemPrompt: z.string(),
   mcpServers: z.record(z.string(), McpServerConfigSchema).optional(),
+  skillMounts: NativeSkillMountsSchema.optional(),
 });
 export type AgentInstructionsUpdate = z.infer<typeof AgentInstructionsUpdateSchema>;
 
@@ -3774,6 +3786,7 @@ export const ServerInfoStatusPayloadSchema = z
         workspaceRequestReceipts: z.boolean().optional(),
         creationLifecycle: z.boolean().optional(),
         creationInitialPrompt: z.boolean().optional(),
+        nativeSkillMounts: z.boolean().optional(),
         // COMPAT(hubAgentRpc): added in v0.8.0; remove gate after 2027-03-05.
         hubAgentRpc: z.boolean().optional(),
         // COMPAT(internalAgents): added in v0.9.0; remove gate after 2027-03-17.

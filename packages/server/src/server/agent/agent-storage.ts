@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Logger } from "pino";
 
 import { writeJsonFileAtomic } from "../atomic-file.js";
+import { NativeSkillMountsSchema } from "@getpaseo/protocol/messages";
 import { AgentFeatureSchema, AgentStatusSchema } from "../messages.js";
 import { toStoredAgentRecord } from "./agent-projections.js";
 import type { ManagedAgent } from "./agent-manager.js";
@@ -28,6 +29,7 @@ const SERIALIZABLE_CONFIG_SCHEMA = z
       .optional(),
     systemPrompt: z.string().nullable().optional(),
     mcpServers: z.record(z.string(), z.any()).nullable().optional(),
+    skillMounts: NativeSkillMountsSchema.nullable().optional(),
   })
   .nullable()
   .optional();
@@ -89,6 +91,7 @@ export type SerializableAgentConfig = Pick<
   | "toolPolicy"
   | "systemPrompt"
   | "mcpServers"
+  | "skillMounts"
 >;
 
 export type StoredAgentRecord = z.infer<typeof STORED_AGENT_SCHEMA>;

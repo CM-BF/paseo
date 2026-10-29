@@ -1,3 +1,4 @@
+import { NativeSkillMountError } from "./agent/native-skill-mounts.js";
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import type { AgentMessageDelivery } from "./agent/agent-messages/index.js";
 import { AgentDirectory } from "./agent/directory.js";
@@ -4985,6 +4986,7 @@ export class Session {
       const agent = await this.agentManager.updateAgentInstructions(msg.agentId, {
         systemPrompt: msg.systemPrompt,
         ...(msg.mcpServers !== undefined ? { mcpServers: msg.mcpServers } : {}),
+        ...(msg.skillMounts !== undefined ? { skillMounts: msg.skillMounts } : {}),
       });
       this.emitForSource(
         {
@@ -5009,7 +5011,11 @@ export class Session {
             accepted: false,
             agent: null,
             error: error instanceof Error ? error.message : "Failed to update agent instructions",
-            code: error instanceof AgentInstructionsUpdateError ? error.code : "update_failed",
+            code:
+              error instanceof AgentInstructionsUpdateError ||
+              error instanceof NativeSkillMountError
+                ? error.code
+                : "update_failed",
           },
         },
         source,

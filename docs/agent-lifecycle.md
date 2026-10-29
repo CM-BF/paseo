@@ -106,7 +106,9 @@ the unfinished turn is lost.
 ### Instruction updates
 
 `agent.update_instructions.request` resumes an idle durable session with a replacement system prompt
-and optional MCP configuration. The manager keeps the canonical ID, timeline epoch, workspace, and
+and optional MCP configuration or native skill mounts. Mount validation runs before closing the old
+runtime; native mount/catalog failures during replacement retain the previous durable configuration.
+The manager keeps the canonical ID, timeline epoch, workspace, and
 labels. It uses the lifecycle lane plus an admission reservation: foreground work, permissions,
 provider-reported subagents, active external descendants, and child session opens prevent the
 update; new turns, provider commands, settings, and descendant opens cannot enter while it runs.

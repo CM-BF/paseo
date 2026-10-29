@@ -176,6 +176,38 @@ const snapshot = await agent.updateInstructions({
 console.log(snapshot.id);
 ```
 
+创建时可用 `config.skillMounts: [{ directory: "/绝对路径/plugin-data/projection" }]`
+挂载原生技能，也可通过同一个空闲 `updateInstructions` 操作替换。需要主机能力
+`nativeSkillMounts`；旧主机在请求发送前被拒绝。省略保留已有挂载，更新时传 `[]` 清除。
+更新仍需传入完整 `systemPrompt`。
+
+插件可能自带旧 SDK。必须在执行创建或更新的**同一个 API 实例**上检测公开方法；
+旧版本内置 schema 可能静默移除未知字段：
+
+```ts
+if (
+  typeof client.agents.supportsNativeSkillMounts !== "function" ||
+  !client.agents.supportsNativeSkillMounts()
+) {
+  throw new Error("请升级 SDK 并连接支持原生技能挂载的主机。");
+}
+```
+
+该方法读取此连接真实声明的能力，断线时返回 false。宿主注入的 `context.paseo` 与插件
+自带的 Node client 是两个 API 实例，不能用前者的结果证明后者支持新字段。
+返回 true 代表宿主支持，Provider 与原生 catalog 仍在实际使用时验证。
+
+投影目录包含 `skills/<名称>/SKILL.md` 和 `.claude-plugin/plugin.json`，清单只允许
+`name`、可选的 `version` 与 `description`。拒绝 hooks、agents、commands、MCP/LSP 配置、
+非标准技能文件名以及清单/技能根目录逃逸出投影的符号链接。目录应放在持久插件数据中，不能依赖升级时会
+清理的 checkout。挂载保留原资源与权限，不自动批准工具，也不替换用户和项目已有技能。
+
+Codex 在该 agent 独立的 app-server 进程内设置目录，并在启动/恢复 thread 前检查真实
+catalog。同进程的原生子代理共享这些技能，其他 Paseo agent 不共享配置。Claude 使用
+会话级本地插件并关闭其 MCP 发现。目录缺失、Codex 未发现指定技能或 provider 不支持时
+会明确失败。恢复运行时会重新挂载，不写全局 provider home。路径引用不是内容快照；
+两个 agent 显式挂载同一可变目录时共享其文件。catalog 可见不代表模型已实际读取或执行技能。
+
 等待调用成功后再把应用中的角色设置标为“已应用”。daemon 会保留同一持久会话和时间线，拒绝正在运行、等待权限或仍有活动子 Agent 的情况，不会自动打断它们。此操作会重启 Provider 运行时，不能保证保留 Provider 未报告的后台任务。失败原因和恢复方式见[API 参考](./reference.md#agent-handle)。
 
 ## 创建子 Agent {#create-a-subagent}

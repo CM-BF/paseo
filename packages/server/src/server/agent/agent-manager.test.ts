@@ -6,7 +6,7 @@ import {
 } from "./agent-messages/index.js";
 import { expect, test, vi, onTestFinished } from "vitest";
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -332,6 +332,82 @@ async function instructionUpdateFixture(persist = true) {
   );
   return { manager, client, storage, agent, workdir, session: client.sessions[0]! };
 }
+
+test("unsupported providers reject skill mounts before creating a runtime", async () => {
+  const client = new TestAgentClient("pi");
+  const manager = new AgentManager({ clients: { pi: client }, logger });
+  await expect(
+    manager.createAgent(
+      { provider: "pi", cwd: process.cwd(), skillMounts: [{ directory: "/not-read" }] },
+      undefined,
+      {},
+    ),
+  ).rejects.toThrow("does not support native skill mounts");
+  expect(client.createdConfigs).toEqual([]);
+});
+
+test("updateInstructions validates mounts before closing, persists them and clears them atomically", async () => {
+  const { manager, client, agent, session, storage, workdir } = await instructionUpdateFixture();
+  const root = join(realpathSync(workdir), "projection");
+  mkdirSync(join(root, ".claude-plugin"), { recursive: true });
+  mkdirSync(join(root, "skills", "fixture"), { recursive: true });
+  writeFileSync(join(root, ".claude-plugin", "plugin.json"), '{"name":"fixture"}');
+  writeFileSync(
+    join(root, "skills", "fixture", "SKILL.md"),
+    "---\nname: fixture\ndescription: Fixture\n---\nBody",
+  );
+  await expect(
+    manager.updateAgentInstructions(agent.id, {
+      systemPrompt: "Original instructions",
+      skillMounts: [{ directory: join(root, "missing") }],
+    }),
+  ).rejects.toThrow(/skill mount/i);
+  expect(session.close).not.toHaveBeenCalled();
+  expect(manager.getAgent(agent.id)?.config.skillMounts).toBeUndefined();
+  const skillMounts = [{ directory: root }];
+  await manager.updateAgentInstructions(agent.id, {
+    systemPrompt: "Original instructions",
+    skillMounts,
+  });
+  expect(client.resumeOverrides.at(-1)?.skillMounts).toEqual(skillMounts);
+  expect((await storage.get(agent.id))?.config?.skillMounts).toEqual(skillMounts);
+  expect((await storage.get(agent.id))?.persistence?.metadata?.skillMounts).toEqual(skillMounts);
+  await manager.updateAgentInstructions(agent.id, {
+    systemPrompt: "Original instructions",
+    skillMounts: [],
+  });
+  expect(client.resumeOverrides.at(-1)?.skillMounts).toEqual([]);
+  expect((await storage.get(agent.id))?.config?.skillMounts).toEqual([]);
+  expect((await storage.get(agent.id))?.persistence?.metadata?.skillMounts).toEqual([]);
+  await manager.closeAgent(agent.id);
+  rmSync(root, { recursive: true });
+  await ensureAgentLoaded(agent.id, { agentManager: manager, agentStorage: storage, logger });
+  expect(client.resumeOverrides.at(-1)?.skillMounts).toEqual([]);
+  expect(manager.getAgent(agent.id)?.config.skillMounts).toEqual([]);
+});
+
+test("updateInstructions retains old mounts after provider resume fails", async () => {
+  const { manager, client, agent, storage, workdir } = await instructionUpdateFixture();
+  const directory = join(realpathSync(workdir), "projection");
+  mkdirSync(join(directory, ".claude-plugin"), { recursive: true });
+  mkdirSync(join(directory, "skills"));
+  writeFileSync(join(directory, ".claude-plugin", "plugin.json"), '{"name":"fixture"}');
+  client.failResume = true;
+  await expect(
+    manager.updateAgentInstructions(agent.id, {
+      systemPrompt: "Original instructions",
+      skillMounts: [{ directory }],
+    }),
+  ).rejects.toThrow("resume unavailable");
+  expect((await storage.get(agent.id))?.config?.skillMounts).toBeUndefined();
+  client.failResume = false;
+  await ensureAgentLoaded(agent.id, { agentManager: manager, agentStorage: storage, logger });
+  await manager.updateAgentInstructions(agent.id, {
+    systemPrompt: "Original instructions",
+    skillMounts: [{ directory }],
+  });
+  expect((await storage.get(agent.id))?.config?.skillMounts).toEqual([{ directory }]);
+});
 
 test("updateInstructions resumes the same conversation and preserves its timeline", async () => {
   const { manager, client, agent, session, storage } = await instructionUpdateFixture();

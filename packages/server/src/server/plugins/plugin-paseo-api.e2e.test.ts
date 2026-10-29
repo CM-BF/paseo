@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { EventEmitter, once } from "node:events";
 import { resolveDaemonVersion } from "../daemon-version.js";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, expect, test } from "vitest";
@@ -23,6 +23,104 @@ const roots: string[] = [];
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+test("server contribution can use its connected API before any RPC and receives a new lifetime on reload", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "paseo-startup-api-"));
+  roots.push(directory);
+  const marker = path.join(directory, "startup.jsonl");
+  await writeFile(
+    path.join(directory, "paseo-plugin.json"),
+    JSON.stringify({
+      id: "startup-api",
+      requirements: { paseo: `>=${resolveDaemonVersion(import.meta.url)}` },
+    }),
+  );
+  await writeFile(
+    path.join(directory, "index.server.ts"),
+    `import { appendFile } from "node:fs/promises";
+import type { PluginServerContext } from "@getpaseo/plugin/server";
+export default function contribute(server: PluginServerContext) {
+  if (!server.paseo.agents.supportsNativeSkillMounts()) throw new Error("Missing connected host API");
+  const startup = server.paseo.agents.list({ page: { limit: 1 } }).then(
+    () => appendFile(${JSON.stringify(marker)}, "ready\\n"),
+    (error) => appendFile(${JSON.stringify(marker)}, "error: " + error.message + "\\n"),
+  );
+  return async () => {
+    await startup;
+    await appendFile(${JSON.stringify(marker)}, "cleanup:" + server.paseo.agents.supportsNativeSkillMounts() + "\\n");
+  };
+}`,
+  );
+  const daemon = await createTestPaseoDaemon({ mcpEnabled: false });
+  const client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
+  try {
+    await client.connect();
+    await client.patchDaemonConfig({ pluginsEnabled: true });
+    await client.installDirectoryPlugin(directory);
+    await expect.poll(() => readFile(marker, "utf8")).toBe("ready\n");
+    await client.reloadPlugin("startup-api");
+    await expect.poll(() => readFile(marker, "utf8")).toBe("ready\ncleanup:false\nready\n");
+    await client.removePlugin("startup-api");
+    expect(await readFile(marker, "utf8")).toBe("ready\ncleanup:false\nready\ncleanup:false\n");
+  } finally {
+    await client.close();
+    await daemon.close();
+  }
+});
+
+test("bundled Node SDK detects the host and preserves native skill mounts through creation", async () => {
+  const directory = await realpath(await mkdtemp(path.join(tmpdir(), "paseo-bundled-skills-")));
+  roots.push(directory);
+  await mkdir(path.join(directory, ".claude-plugin"));
+  await mkdir(path.join(directory, "skills", "fixture"), { recursive: true });
+  await writeFile(path.join(directory, ".claude-plugin", "plugin.json"), '{"name":"fixture"}');
+  await writeFile(path.join(directory, "skills", "fixture", "SKILL.md"), "Fixture body");
+  const configs: Array<{ skillMounts?: Array<{ directory: string }> }> = [];
+  const daemon = await createTestPaseoDaemon({
+    agentClients: {
+      ...createTestAgentClients(),
+      codex: createTestAgentClient("codex", {
+        onStartTurn: (_prompt, config) => configs.push(config),
+      }),
+    },
+  });
+  try {
+    const script = path.join(directory, "bundled-client.cjs");
+    await build({
+      stdin: {
+        contents: `import assert from "node:assert/strict";
+import { createPaseoClient } from "@getpaseo/client";
+import { createHostTransportFactory } from "@getpaseo/client/node";
+const url = ${JSON.stringify(`ws://127.0.0.1:${daemon.port}/ws`)};
+const client = createPaseoClient({ url, transportFactory: createHostTransportFactory(url) });
+(async () => {
+  assert.equal(client.agents.supportsNativeSkillMounts(), false);
+  try {
+    await client.connect();
+    assert.equal(client.agents.supportsNativeSkillMounts(), true);
+    const agent = await client.agents.create({
+      config: { provider: "codex/test", skillMounts: [{ directory: ${JSON.stringify(directory)} }] },
+      cwd: ${JSON.stringify(directory)}, prompt: "Use the fixture", requireInitialPromptReservation: true,
+    });
+    await agent.waitForFinish();
+  } finally { await client.close(); }
+  assert.equal(client.agents.supportsNativeSkillMounts(), false);
+})().catch((error) => { console.error(error); process.exitCode = 1; });`,
+        resolveDir: fileURLToPath(new URL("../../../..", import.meta.url)),
+      },
+      bundle: true,
+      outfile: script,
+      format: "cjs",
+      platform: "node",
+      external: ["bufferutil", "utf-8-validate"],
+    });
+    await promisify(execFile)(process.execPath, [script], { timeout: 30_000 });
+    expect(configs).toHaveLength(1);
+    expect(configs[0]?.skillMounts).toEqual([{ directory }]);
+  } finally {
+    await daemon.close();
+  }
 });
 
 test.each(["React Native", "native"])(
@@ -158,12 +256,14 @@ export default function contribute(server: PluginServerContext) {
     }),
   );
   server.handle(configure, async ({ agentId }, { paseo }) => {
+    if (paseo !== server.paseo) throw new Error("Server API identity changed");
+    if (!paseo.agents.supportsNativeSkillMounts()) throw new Error("Native skill mount support missing");
     const agent = paseo.agents.ref(agentId);
     await agent.waitForFinish();
     await agent.setModel("test-model");
     await agent.setThinkingOption(null);
     await agent.setFeature("test_feature", true);
-    await agent.updateInstructions({ systemPrompt: "Plugin personality", mcpServers: {} });
+    await agent.updateInstructions({ systemPrompt: "Plugin personality", mcpServers: {}, skillMounts: [] });
     const steerOptions = { expectedTurnId: "finished-turn", messageId: "plugin-exact-steer" };
     const steer = await agent.steer("Only the finished turn", steerOptions);
     const steerRetry = await agent.steer("Only the finished turn", steerOptions);
@@ -202,7 +302,8 @@ export default function contribute(server: PluginServerContext) {
 }`,
   );
 
-  const turnConfigs: Array<{ systemPrompt?: string }> = [];
+  const turnConfigs: Array<{ systemPrompt?: string; skillMounts?: Array<{ directory: string }> }> =
+    [];
   const daemon = await createTestPaseoDaemon({
     agentClients: {
       ...createTestAgentClients(),
@@ -269,6 +370,7 @@ export default function contribute(server: PluginServerContext) {
       runStatus: "succeeded",
     });
     expect(turnConfigs.at(-1)?.systemPrompt).toBe("Plugin personality");
+    expect(turnConfigs.at(-1)?.skillMounts).toEqual([]);
     await client.removePlugin("paseo-api");
     const schedules = await client.scheduleList();
     expect(schedules.error).toBeNull();

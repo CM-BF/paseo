@@ -275,6 +275,7 @@ export interface PaseoAgentConfig {
   systemPrompt?: PaseoAgentSessionConfig["systemPrompt"];
   toolPolicy?: PaseoAgentSessionConfig["toolPolicy"];
   mcpServers?: PaseoAgentSessionConfig["mcpServers"];
+  skillMounts?: PaseoAgentSessionConfig["skillMounts"];
 }
 
 export interface PaseoAgentCreateOptions {
@@ -444,6 +445,8 @@ export interface PaseoAgentHandle {
 }
 
 export interface PaseoAgentActions {
+  /** True only while this host connection advertises native skill mounts. Provider support is checked on use. */
+  supportsNativeSkillMounts(): boolean;
   list(options: PaseoAgentListOptions & { subscribe: {} }): Promise<
     PaseoAgentListResult & {
       subscriptionId: string;
@@ -826,6 +829,10 @@ export function createPaseoApi(
       subscribe: listenWorkspaces,
     },
     agents: {
+      supportsNativeSkillMounts: () =>
+        !lifetime.signal.aborted &&
+        daemonClient.getConnectionState().status === "connected" &&
+        daemonClient.getLastServerInfoMessage()?.features?.nativeSkillMounts === true,
       list: listAgents,
       ref: (agent) => createAgentHandle(agent),
       create: (options) => createAgent(options),

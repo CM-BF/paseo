@@ -3202,6 +3202,10 @@ export class DaemonClient {
       const { requireInitialPromptReservation: agentRequirement, ...agentRequest } =
         initialAgent ?? {};
       if (requireInitialPromptReservation || agentRequirement) this.requireCreationInitialPrompt();
+      const config = (kind === "workspace" ? initialAgent?.config : request.config) as
+        | AgentSessionConfig
+        | undefined;
+      this.requireNativeSkillMounts(config?.skillMounts);
       if (initialAgent) request.agent = agentRequest;
       return kind === "workspace"
         ? this.sendCorrelatedSessionRequest({
@@ -3251,6 +3255,7 @@ export class DaemonClient {
   }
 
   async createAgent(options: CreateAgentRequestOptions): Promise<AgentSnapshotPayload> {
+    this.requireNativeSkillMounts(resolveAgentConfig(options).skillMounts);
     if (options.requireInitialPromptReservation) this.requireCreationInitialPrompt();
     if (options.git !== undefined || options.worktreeName !== undefined) {
       throw new Error(
@@ -3264,6 +3269,14 @@ export class DaemonClient {
     });
     if (result.error || !result.agent) throw new Error(result.error ?? "Agent creation failed");
     return result.agent;
+  }
+
+  private requireNativeSkillMounts(mounts: AgentInstructionsUpdate["skillMounts"]): void {
+    if (mounts !== undefined && this.lastServerInfoMessage?.features?.nativeSkillMounts !== true) {
+      throw Object.assign(new Error("Update the host to mount native agent skills."), {
+        code: "unsupported_capability",
+      });
+    }
   }
 
   private requireCreationInitialPrompt(): void {
@@ -3560,6 +3573,10 @@ export class DaemonClient {
     handle: AgentPersistenceHandle,
     overrides?: Partial<AgentSessionConfig>,
   ): Promise<AgentSnapshotPayload> {
+    this.requireNativeSkillMounts(
+      overrides?.skillMounts ??
+        (handle.metadata?.skillMounts as AgentInstructionsUpdate["skillMounts"]),
+    );
     const requestId = this.createRequestId();
     const message = SessionInboundMessageSchema.parse({
       type: "resume_agent_request",
@@ -4154,6 +4171,7 @@ export class DaemonClient {
     agentId: string,
     instructions: AgentInstructionsUpdate,
   ): Promise<AgentSnapshotPayload> {
+    this.requireNativeSkillMounts(instructions.skillMounts);
     // COMPAT(agentInstructionsUpdate): added 2026-10-28; remove after 2027-04-28 once the daemon floor supports it.
     if (this.getLastServerInfoMessage()?.features?.agentInstructionsUpdate !== true) {
       throw Object.assign(new Error("Update the host to update agent instructions."), {
@@ -5101,6 +5119,7 @@ export class DaemonClient {
     input: CreateWorkspaceRequestOptions,
     requestId?: string,
   ): Promise<WorkspaceCreatePayload> {
+    if (input.agent) this.requireNativeSkillMounts(resolveAgentConfig(input.agent).skillMounts);
     if (input.agent?.requireInitialPromptReservation) this.requireCreationInitialPrompt();
     const resolvedRequestId = this.createRequestId(requestId ?? input.requestId);
     if (input.background !== undefined || input.callerAgentId) this.requireBackgroundWorkspaces();

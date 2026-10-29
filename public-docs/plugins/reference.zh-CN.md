@@ -494,6 +494,14 @@ export default function contribute(server: PluginServerContext) {
 
 每个存在的入口都默认导出一个贡献函数，并返回清理函数。客户端入口接收 `PluginClientContext`；服务端入口接收 `PluginServerContext`。客户端注册方法返回幂等的移除函数，但标题栏按钮和 Composer 标签除外，它们返回 `{ update, remove }` 句柄。入口的清理函数会在 Paseo 移除剩余的注册之前运行。
 
+`PluginServerContext.paseo` 是该安装已连接、由宿主提供的 `PaseoApi` 只读引用，在
+`contribute(server)` 中就可使用。后台服务无需等待 UI RPC 或生命周期钩子；处理函数的
+`context.paseo` 与它是同一实例。连接和释放由运行时负责。同步返回清理函数，处理异步
+初始化的错误，并在清理时停止后台服务，不要跨重载保留旧 API。旧主机没有这个属性，
+使用前需检测；能力也必须在真正发送操作的同一个 API 实例上检查，因为另行打包的旧 SDK
+可能移除新字段。原生技能使用 `server.paseo.agents.supportsNativeSkillMounts()`，
+详见 [SDK 指南](/docs/sdk/agents#update-session-instructions)。
+
 ```ts
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 import { Main } from "./client/main";

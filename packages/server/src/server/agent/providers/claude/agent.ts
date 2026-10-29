@@ -1,3 +1,5 @@
+import { validateNativeSkillMounts } from "../../native-skill-mounts.js";
+import { NativeSkillMountsSchema } from "@getpaseo/protocol/messages";
 import { setImmediate } from "node:timers/promises";
 import { ClaudeRuntimeSafety } from "./runtime-safety.js";
 import { validateProviderOptions } from "../../provider-options.js";
@@ -103,6 +105,7 @@ import {
   type AgentCapabilityFlags,
   type AgentClient,
   type AgentCreateSessionOptions,
+  type AgentResumeSessionOptions,
   type AgentFeature,
   type AgentLaunchContext,
   type AgentMetadata,
@@ -1087,6 +1090,8 @@ function coerceSessionMetadata(metadata: AgentMetadata | undefined): Partial<Age
   if (typeof metadata.systemPrompt === "string") {
     result.systemPrompt = metadata.systemPrompt;
   }
+  if (metadata.skillMounts !== undefined)
+    result.skillMounts = NativeSkillMountsSchema.parse(metadata.skillMounts);
   if (isMcpServersRecord(metadata.mcpServers)) {
     result.mcpServers = metadata.mcpServers;
   }
@@ -1639,6 +1644,7 @@ export class ClaudeAgentClient implements AgentClient {
     options?: AgentCreateSessionOptions,
   ): Promise<AgentSession> {
     const claudeConfig = this.assertConfig(config);
+    await validateNativeSkillMounts(claudeConfig.skillMounts);
     return new ClaudeAgentSession(claudeConfig, {
       defaults: this.defaults,
       runtimeSettings: this.runtimeSettings,
@@ -1656,6 +1662,7 @@ export class ClaudeAgentClient implements AgentClient {
     handle: AgentPersistenceHandle,
     overrides?: Partial<AgentSessionConfig>,
     launchContext?: AgentLaunchContext,
+    options?: AgentResumeSessionOptions,
   ): Promise<AgentSession> {
     const metadata = coerceSessionMetadata(handle.metadata);
     const merged: Partial<AgentSessionConfig> = { ...metadata, ...overrides };
@@ -1668,6 +1675,7 @@ export class ClaudeAgentClient implements AgentClient {
       cwd: merged.cwd,
     };
     const claudeConfig = this.assertConfig(mergedConfig);
+    if (options?.purpose !== "history") await validateNativeSkillMounts(claudeConfig.skillMounts);
     const session = new ClaudeAgentSession(claudeConfig, {
       defaults: this.defaults,
       runtimeSettings: this.runtimeSettings,
@@ -3639,6 +3647,7 @@ class ClaudeAgentSession implements AgentSession {
   }
 
   private async buildOptions(permissionMode: PermissionMode): Promise<ClaudeOptions> {
+    const mounts = await validateNativeSkillMounts(this.config.skillMounts);
     const { thinking, effort, ultracode } = this.resolveThinkingConfig();
     const appendedSystemPrompt = this.buildAppendedSystemPrompt();
     const providerOptions = applyClaudeToolPolicy(
@@ -3699,6 +3708,15 @@ class ClaudeAgentSession implements AgentSession {
       ...(effort ? { effort } : {}),
       ...providerOptions,
       ...settingsOptions,
+      ...(mounts.length
+        ? {
+            plugins: mounts.map(({ directory }) => ({
+              type: "local" as const,
+              path: directory,
+              skipMcpDiscovery: true,
+            })),
+          }
+        : {}),
       // Provider subagent panes render the child's nested transcript.
       forwardSubagentText: true,
       // Stop and replace abort only the main turn, like Esc in Claude Code, and background

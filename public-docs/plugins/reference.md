@@ -618,6 +618,16 @@ Each present entry default-exports one contribution function and returns cleanup
 receive `PluginClientContext`; server entries receive `PluginServerContext`. Client registration methods return idempotent removers, except header buttons and composer pills,
 which return `{ update, remove }` handles. The entry cleanup runs before Paseo removes remaining registrations.
 
+`PluginServerContext.paseo` is a readonly reference to the installation's connected, host-provided
+`PaseoApi`, available immediately in `contribute(server)`. Background services can retain it without
+waiting for a UI RPC or lifecycle hook; handlers receive the same API as `context.paseo`. The runtime
+owns its connection and disposal. Return cleanup synchronously, handle errors from asynchronous setup,
+and stop your background services during cleanup instead of retaining the API across reloads.
+Older hosts do not provide this property. Check its presence before using it, and check capabilities
+on the same API instance that sends operations; a separately bundled old SDK can strip new fields.
+For native skills, use `server.paseo.agents.supportsNativeSkillMounts()` as described in the
+[SDK guide](/docs/sdk/agents#update-session-instructions).
+
 ```ts
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 import { Main } from "./client/main";

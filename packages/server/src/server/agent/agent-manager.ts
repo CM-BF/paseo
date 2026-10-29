@@ -22,6 +22,7 @@ import {
 } from "@getpaseo/protocol/agent-labels";
 import type { Logger } from "pino";
 import type { ToolPolicy } from "@getpaseo/protocol/agent-types";
+import { NativeSkillMountError, validateNativeSkillMounts } from "./native-skill-mounts.js";
 import type { AgentInstructionsUpdate } from "@getpaseo/protocol/messages";
 import type { ProviderPaseoToolsPolicy } from "@getpaseo/protocol/provider-config";
 import { z } from "zod";
@@ -258,6 +259,7 @@ function buildStoredAgentConfig(record: StoredAgentRecord): AgentSessionConfig {
     config.systemPrompt = record.config.systemPrompt;
   }
   if (record.config.mcpServers != null) config.mcpServers = record.config.mcpServers;
+  if (record.config.skillMounts != null) config.skillMounts = record.config.skillMounts;
   return stripInternalPaseoMcpServer(config);
 }
 
@@ -613,13 +615,18 @@ function normalizePersistenceForConfig(
   if (!handle) {
     return null;
   }
-  const { mcpServers: _launchMcpServers, ...metadata } = handle.metadata ?? {};
+  const {
+    mcpServers: _launchMcpServers,
+    skillMounts: _oldSkillMounts,
+    ...metadata
+  } = handle.metadata ?? {};
   return {
     ...handle,
     metadata: {
       ...metadata,
       cwd: config.cwd,
       ...(config.mcpServers ? { mcpServers: config.mcpServers } : {}),
+      ...(config.skillMounts !== undefined ? { skillMounts: config.skillMounts } : {}),
     },
   };
 }
@@ -6180,6 +6187,25 @@ export class AgentManager {
     options: NormalizeConfigOptions = {},
   ): Promise<AgentSessionConfig> {
     const normalized: AgentSessionConfig = { ...config };
+    if (normalized.skillMounts?.length && options.purpose !== "history") {
+      let provider = normalized.provider;
+      const seen = new Set<string>();
+      while (!seen.has(provider)) {
+        seen.add(provider);
+        const base = this.providerDefinitions.get(provider)?.derivedFromProviderId;
+        if (!base) break;
+        provider = base;
+      }
+      if (provider !== "codex" && provider !== "claude") {
+        throw new NativeSkillMountError(
+          `Provider ${normalized.provider} does not support native skill mounts`,
+          { unsupported: true },
+        );
+      }
+      normalized.skillMounts = (await validateNativeSkillMounts(normalized.skillMounts)).map(
+        ({ directory }) => ({ directory }),
+      );
+    }
 
     // Always resolve cwd to absolute path for consistent history file lookup
     if (normalized.cwd) {
