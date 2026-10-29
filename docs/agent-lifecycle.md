@@ -138,6 +138,20 @@ or a new run and never clears permissions. Message receipts bind the text and ex
 the message ID and persist the delivery result, so retries can replay an acknowledged result even
 after the turn finishes. An interrupted pending receipt remains uncertain and is not resent.
 
+`agent.turn.cancel.request` targets one Paseo-managed foreground turn and keeps the same admission
+lane until the captured run settles. It requires a provider `cancelTurn(expectedTurnId)` method
+with an atomic native identity precondition; ordinary `interrupt()` is never a fallback. A provider
+acknowledgement alone is not completion evidence. Timeouts leave a pending receipt, without
+synthesizing a terminal event or clearing permissions. The durable message ID binds the expected
+turn and replays definitive outcomes without stopping twice.
+
+No production provider currently meets that cancellation contract. Codex returns `unavailable`
+for its current turn: its app-server checks the turn ID before asynchronously submitting an
+unscoped core interrupt, while native goal or background continuations can bypass Paseo's lane.
+A version check or disabling goals alone does not prove those continuations are excluded. The
+mock provider implements the contract for tests. Legacy explicit cancellation keeps its existing
+behavior. See the [SDK result contract](../public-docs/sdk/reference.md#agent-handle).
+
 Provider interruption is idempotent at the `AgentSession` boundary. It resolves when the prior
 foreground turn can no longer run, including when the provider reports that it is already idle. It
 rejects only when the provider may still own the turn. Provider adapters translate native errors

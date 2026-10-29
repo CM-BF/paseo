@@ -25,6 +25,7 @@ import {
   type AgentSessionConfig,
   type SteerActiveTurnOptions,
   type SteerResult,
+  type TurnCancelAdmission,
   type AgentSlashCommand,
   type AgentStreamEvent,
   type AgentTimelineItem,
@@ -4982,6 +4983,17 @@ export class CodexAppServerAgentSession implements AgentSession {
         this.reconcileAsyncQuestionsAfterRewind(this.stagedHistory.timeline);
       },
     });
+  }
+
+  async cancelTurn(expectedTurnId: string): Promise<TurnCancelAdmission> {
+    if (this.activeForegroundTurnId !== expectedTurnId) return { status: "changed" };
+    // Codex's turn/interrupt checks turnId in app-server, then submits an unscoped
+    // core Op::Interrupt after asynchronous work. Goals and background notifications
+    // can start a native successor outside Paseo's foreground queue. A version gate
+    // or disabling goals alone cannot prove that successor will not be interrupted.
+    // Keep the existing explicit interrupt API separate until the native operation
+    // itself supports an atomic expected-turn precondition.
+    return { status: "unavailable" };
   }
 
   async interrupt(): Promise<void> {

@@ -97,6 +97,7 @@ nav: API 参考
 | `send(text, options?)`                | `Promise<void>`                        | 在 daemon 接受提示词后 resolve。                                                                                                                                                                |
 | `sendIfIdle(text, options?)`          | `Promise<PaseoAgentSendIfIdleResult>`  | 仅在准入时仍空闲才启动轮次；返回带 `turnId` 的 `accepted` 或 `busy`。需要 `agentSendIfIdle`。可选 `messageId` 可重放已保存的结果，避免重复投递。                                                |
 | `steer(text, options)`                | `Promise<PaseoAgentSteerResult>`       | 仅向 `options.expectedTurnId` 对应的轮次追加指令；结果的 `status` 为 `accepted`、`unavailable` 或 `changed`。可选 `messageId` 支持持久重试。需要主机支持 `agentTurnSteer`，不会替换或启动轮次。 |
+| `cancelTurn(options)`                 | `Promise<PaseoAgentCancelTurnResult>`  | 仅取消 `options.expectedTurnId`；返回 `cancelled`、`changed` 或 `unavailable`。可选 `messageId` 支持持久重试。需要 `agentTurnCancel`，不会退回无条件停止。                                      |
 | `setModel(modelId)`                   | `Promise<void>`                        | 在当前 Provider 内选择模型 ID；`null` 恢复默认模型。                                                                                                                                            |
 | `setThinkingOption(thinkingOptionId)` | `Promise<AgentProviderNotice \| null>` | 选择推理选项，并返回 Provider 提示（如有）；`null` 恢复默认选项。                                                                                                                               |
 | `setFeature(featureId, value)`        | `Promise<void>`                        | 修改 Agent 的 `features` 快照中公布的功能。                                                                                                                                                     |
@@ -120,6 +121,11 @@ nav: API 参考
 daemon 或 Provider 拒绝设置变更时，调用会 reject。模型 ID 应来自当前 Provider 的 `providers.listModels`，不要使用创建时的 `provider/model` 格式。切换 Provider 需要创建新的 Agent。模型、推理选项和功能设置不会替换句柄缓存的快照；请调用 `refresh()` 或用 `subscribe()` 观察更新。返回的 `AgentProviderNotice` 包含 `type`（`info`、`warning` 或 `error`）和 `message`。
 
 `PaseoAgentCommandsResult` 包含 `agentId`、`commands` 和 `error`。每条命令都有 `name`、`description`、`argumentHint`，以及取值为 `"command"` 或 `"skill"` 的可选 `kind`。无法回答的 Provider 会在 `error` 中报告，而不是 reject；完全不提供命令列表的 Provider 返回空数组。
+
+`cancelTurn` 返回的 `cancelled` 表示指定轮次已结束，`changed` 表示它已不是当前轮次，
+`unavailable` 表示 Provider 无法保证按轮次取消。目前包括 Codex 在内的正式 Provider 对活动轮次
+返回 `unavailable`；主机能力标志只表示支持此 API，不代表 Provider 支持。丢失确认后应保留原始
+`expectedTurnId` 和 `messageId`。结果不确定的错误不代表已停止，不能因此改用无条件停止或新的消息 ID。
 
 ### 时间线句柄 {#timeline-handle}
 

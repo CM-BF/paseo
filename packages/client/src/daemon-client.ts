@@ -19,6 +19,8 @@ import { CreationClient } from "./creation/index.js";
 import type { CreationSnapshot } from "@getpaseo/protocol/messages";
 import type {
   AgentTurnSteerOptions,
+  AgentTurnCancelOptions,
+  AgentTurnCancelResult,
   AgentTurnSteerResult,
   AgentSendIfIdleOptions,
   AgentSendIfIdleResult,
@@ -4061,6 +4063,29 @@ export class DaemonClient {
       responseType: "agent.turn.send_if_idle.response",
     });
     if (!payload.result) throw new Error(payload.error ?? "Conditional send failed");
+    return payload.result;
+  }
+
+  async cancelAgentTurn(
+    agentId: string,
+    options: AgentTurnCancelOptions,
+  ): Promise<AgentTurnCancelResult> {
+    // COMPAT(agentTurnCancel): added in v0.14.0; remove after 2027-04-29 once the daemon floor supports it.
+    if (this.getLastServerInfoMessage()?.features?.agentTurnCancel !== true) {
+      throw Object.assign(new Error("Update the host to cancel a specific agent turn."), {
+        code: "unsupported_capability",
+      });
+    }
+    const payload = await this.sendCorrelatedSessionRequest({
+      message: {
+        type: "agent.turn.cancel.request",
+        agentId,
+        expectedTurnId: options.expectedTurnId,
+        messageId: options.messageId ?? this.createRequestId(),
+      },
+      responseType: "agent.turn.cancel.response",
+    });
+    if (!payload.result) throw new Error(payload.error ?? "Conditional cancel failed");
     return payload.result;
   }
 

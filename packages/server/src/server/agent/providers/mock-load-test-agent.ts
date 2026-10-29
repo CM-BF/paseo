@@ -1112,6 +1112,13 @@ export class MockLoadTestAgentSession implements AgentSession {
     });
   }
 
+  async cancelTurn(expectedTurnId: string) {
+    if (this.activeTurn?.turnId !== expectedTurnId) return { status: "changed" as const };
+    // interrupt captures and clears this turn synchronously before its first await.
+    await this.interrupt();
+    return { status: "accepted" as const };
+  }
+
   async steerActiveTurn(
     _prompt: AgentPromptInput,
     options: SteerActiveTurnOptions,

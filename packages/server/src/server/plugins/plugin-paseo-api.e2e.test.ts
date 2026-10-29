@@ -120,6 +120,7 @@ const configure = defineRpc({
     steer: z.object({ status: z.literal("changed") }), steerRetry: z.object({ status: z.literal("changed") }),
     idleSend: z.object({ status: z.literal("accepted"), turnId: z.string() }),
     idleRetry: z.object({ status: z.literal("accepted"), turnId: z.string() }),
+    cancel: z.object({ status: z.literal("changed") }), cancelRetry: z.object({ status: z.literal("changed") }),
   }),
 });
 
@@ -162,6 +163,9 @@ export default function contribute(server: PluginServerContext) {
     const idleSend = await agent.sendIfIdle("Start a separate plugin turn", idleOptions);
     await agent.waitForFinish();
     const idleRetry = await agent.sendIfIdle("Start a separate plugin turn", idleOptions);
+    const cancelOptions = { expectedTurnId: idleSend.turnId, messageId: "plugin-exact-cancel" };
+    const cancel = await agent.cancelTurn(cancelOptions);
+    const cancelRetry = await agent.cancelTurn(cancelOptions);
     const snapshot = await agent.refresh();
     const created = await paseo.schedules.create({
       name: "Plugin review", prompt: "Scheduled by a plugin handler",
@@ -180,7 +184,7 @@ export default function contribute(server: PluginServerContext) {
     if (logs.error) throw new Error(logs.error);
     return {
       scheduleId: options.id,
-      steer, steerRetry, idleSend, idleRetry,
+      steer, steerRetry, idleSend, idleRetry, cancel, cancelRetry,
       model: snapshot.agent.model,
       feature: snapshot.agent.features.find((feature) => feature.id === "test_feature").value,
       runStatus: logs.runs[0].status,
@@ -249,6 +253,8 @@ export default function contribute(server: PluginServerContext) {
       steer: { status: "changed" },
       steerRetry: { status: "changed" },
       idleSend: { status: "accepted", turnId: expect.any(String) },
+      cancel: { status: "changed" },
+      cancelRetry: { status: "changed" },
       idleRetry: { status: "accepted", turnId: expect.any(String) },
       model: "test-model",
       feature: true,

@@ -64,6 +64,29 @@ async function compileInlineSchema(sourceSchema: string): Promise<GeneratedSchem
 }
 
 describe("WS outbound zod-aot validation", () => {
+  it("validates exact cancellation outcomes without accepting a send acknowledgement", () => {
+    const wrap = (status: unknown) => ({
+      type: "session",
+      message: {
+        type: "agent.turn.cancel.response",
+        payload: {
+          requestId: "r",
+          agentId: "a",
+          messageId: "m",
+          expectedTurnId: "A",
+          result: { status },
+          error: null,
+        },
+      },
+    });
+    for (const status of ["cancelled", "changed", "unavailable"]) {
+      expect(WSOutboundMessageSchema.safeParse(wrap(status)).success).toBe(true);
+      expect(validateWSOutboundMessage(wrap(status))).toMatchObject({ success: true });
+    }
+    expect(WSOutboundMessageSchema.safeParse(wrap("accepted")).success).toBe(false);
+    expect(validateWSOutboundMessage(wrap("accepted"))).toMatchObject({ success: false });
+  });
+
   it("validates send-if-idle results and retains the accepted turn identity", () => {
     const wrap = (result: unknown) => ({
       type: "session",

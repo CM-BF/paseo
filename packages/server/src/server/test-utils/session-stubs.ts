@@ -294,6 +294,7 @@ export function createMessageReceiptsStub(): SessionOptions["messageReceipts"] {
     send: (input) => input.send(),
     steer: (input) => input.send(),
     sendIfIdle: (input) => input.send(),
+    cancelTurn: (input) => input.send(),
   };
 }
 

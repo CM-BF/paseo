@@ -226,6 +226,28 @@ function deferred<T>() {
 }
 
 describe("Codex active-turn steering admission", () => {
+  test("exact-turn cancel remains unavailable without atomic native cancellation, preserving permissions", async () => {
+    const appServer = createFakeCodexAppServer({
+      initialize: () => ({ userAgent: "codex/0.128.0" }),
+    });
+    const { session, paseoTurnId } = await startPublicSteeringSession(appServer);
+    castInternals<{ emitSyntheticPlanApprovalRequest: (planText: string) => void }>(
+      session,
+    ).emitSyntheticPlanApprovalRequest("Keep this permission");
+    await expect(session.cancelTurn!(paseoTurnId)).resolves.toEqual({ status: "unavailable" });
+    await expect(session.cancelTurn!("stale")).resolves.toEqual({ status: "changed" });
+    expect(appServer.requests().filter((request) => request.method === "turn/interrupt")).toEqual(
+      [],
+    );
+    expect(session.getPendingPermissions()).toHaveLength(1);
+    await session.respondToPermission(session.getPendingPermissions()[0]!.id, {
+      behavior: "deny",
+      message: "test cleanup",
+    });
+    await session.close();
+    appServer.assertNoErrors();
+  });
+
   test("a caller's stale Paseo turn never reaches Codex or clears permissions", async () => {
     const appServer = createFakeCodexAppServer();
     const { session } = await startPublicSteeringSession(appServer);

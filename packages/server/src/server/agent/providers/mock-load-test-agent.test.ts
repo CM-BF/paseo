@@ -31,6 +31,28 @@ describe("MockLoadTestAgentClient", () => {
     vi.useRealTimers();
   });
 
+  test("exact-turn cancellation leaves a later mock turn running", async () => {
+    const session = await new MockLoadTestAgentClient().createSession({
+      provider: "mock",
+      cwd: process.cwd(),
+      model: "ten-second-stream",
+    });
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+    try {
+      const first = await session.startTurn("first");
+      await expect(session.cancelTurn!(first.turnId)).resolves.toEqual({ status: "accepted" });
+      const second = await session.startTurn("second");
+      await expect(session.cancelTurn!(first.turnId)).resolves.toEqual({ status: "changed" });
+      expect(events.filter((event) => event.type === "turn_canceled")).toEqual([
+        { type: "turn_canceled", provider: "mock", reason: "Interrupted", turnId: first.turnId },
+      ]);
+      await expect(session.cancelTurn!(second.turnId)).resolves.toEqual({ status: "accepted" });
+    } finally {
+      await session.close();
+    }
+  });
+
   test("default model is a five minute foreground stream with token-rate intervals", async () => {
     const client = new MockLoadTestAgentClient();
 

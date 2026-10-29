@@ -100,6 +100,7 @@ See [background workspaces](./workspaces.md) for caller inheritance and inclusiv
 | `send(text, options?)`                | `Promise<void>`                        | Resolves when the daemon accepts the prompt.                                                                                                                                                                                    |
 | `sendIfIdle(text, options?)`          | `Promise<PaseoAgentSendIfIdleResult>`  | Starts only at an idle admission boundary; returns `accepted` with `turnId` or `busy`. Requires `agentSendIfIdle`. An optional `messageId` replays durable results without duplicate delivery.                                  |
 | `steer(text, options)`                | `Promise<PaseoAgentSteerResult>`       | Delivers only to `options.expectedTurnId`; returns `accepted`, `unavailable`, or `changed` in `status`. Optional `messageId` supports durable retries. Requires `agentTurnSteer` host support; never replaces or starts a turn. |
+| `cancelTurn(options)`                 | `Promise<PaseoAgentCancelTurnResult>`  | Cancels only `options.expectedTurnId`; returns `cancelled`, `changed`, or `unavailable`. Optional `messageId` supports durable retries. Requires `agentTurnCancel`; never falls back to an unconditional stop.                  |
 | `setModel(modelId)`                   | `Promise<void>`                        | Selects a model ID within the agent's current Provider; `null` restores its default.                                                                                                                                            |
 | `setThinkingOption(thinkingOptionId)` | `Promise<AgentProviderNotice \| null>` | Selects a reasoning option and returns the Provider's notice, if any; `null` restores the default.                                                                                                                              |
 | `setFeature(featureId, value)`        | `Promise<void>`                        | Changes a feature advertised in the agent's `features` snapshot.                                                                                                                                                                |
@@ -119,6 +120,13 @@ The call rejects running, initializing, or permission-blocked agents and agents 
 `workspaceId` through `archivedAt` mirror the last snapshot the handle observed. A handle from `ref()` reads `null` for all of them until `refresh()`, `run()`, `waitForFinish()`, a timeline refetch, or `subscribe()` delivers a snapshot. Optional values in an observed snapshot also read as `null`. Call `current()` when you need the whole snapshot or need to distinguish those states.
 
 `PaseoAgentRunResult` contains `status`, `final`, `error`, and `lastMessage`. `final` refreshes the handle when present.
+
+For `cancelTurn`, `cancelled` confirms that the owned turn settled; `changed` means it is no longer
+current, and `unavailable` means the provider cannot guarantee conditional cancellation. Current
+production providers, including Codex, return `unavailable` for an active turn. The host capability
+advertises the API, not provider support. Store the original `expectedTurnId` and `messageId` across
+lost acknowledgements. An ambiguous error does not mean the turn stopped, and must not trigger an
+unconditional stop or a new message ID.
 
 Agent setting changes reject when the daemon or Provider refuses them. Use model IDs from `providers.listModels` for the existing Provider, not the `provider/model` creation format. Switching Provider requires a new agent. Model, reasoning-option, and feature settings do not replace the handle's cached snapshot; call `refresh()` or observe updates with `subscribe()`. A returned `AgentProviderNotice` has `type` (`info`, `warning`, or `error`) and `message`.
 

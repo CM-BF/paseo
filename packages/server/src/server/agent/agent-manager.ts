@@ -51,6 +51,7 @@ import {
   type AgentSession,
   type AgentSessionConfig,
   type SteerResult,
+  type TurnCancelAdmission,
   type AgentStreamEvent,
   type AgentTimelineItem,
   type AgentUsage,
@@ -3774,6 +3775,43 @@ export class AgentManager {
 
   async cancelAgentRun(agentId: string): Promise<AgentRunCancellationResult> {
     return this.runForegroundMutation(agentId, () => this.cancelAgentRunNow(agentId));
+  }
+
+  /** Cancels only a caller-owned turn; never falls back to the session-wide interrupt. */
+  async cancelAgentTurn(
+    agentId: string,
+    expectedTurnId: string,
+  ): Promise<{ status: "cancelled" | "changed" | "unavailable" }> {
+    this.assertRuntimeMutationAvailable(agentId);
+    return this.runForegroundMutation(agentId, async () => {
+      this.assertRuntimeMutationAvailable(agentId);
+      await this.drainSessionEvents(agentId);
+      this.agentStreamCoalescer.flushFor(agentId);
+      const agent = this.agents.get(agentId);
+      if (!agent || agent.activeTurnId !== expectedTurnId) return { status: "changed" };
+      if (agent.activeForegroundTurnId !== expectedTurnId) return { status: "unavailable" };
+      if (!agent.session?.cancelTurn) return { status: "unavailable" };
+      const run = this.runs.getRun(agentId);
+      if (!run || this.runs.getTurnId(agentId) !== expectedTurnId) return { status: "unavailable" };
+      let admission: TurnCancelAdmission | undefined;
+      const acknowledged = await this.waitWithTimeout({
+        operation: agent.session.cancelTurn(expectedTurnId).then((result) => {
+          admission = result;
+          return undefined;
+        }),
+        timeoutMs: this.rescueTimeouts.interruptSessionMs,
+      });
+      if (acknowledged === "timed_out" || !admission)
+        throw new Error("agent_turn_cancel_outcome_unknown");
+      if (admission.status !== "accepted") return { status: admission.status };
+      const settlement = await this.waitWithTimeout({
+        operation: run.settledPromise,
+        timeoutMs: this.rescueTimeouts.interruptSessionMs,
+      });
+      // Never synthesize a terminal event or clear permissions belonging to a later turn.
+      if (settlement !== "completed") throw new Error("agent_turn_cancel_outcome_unknown");
+      return { status: "cancelled" };
+    });
   }
 
   private async cancelAgentRunNow(agentId: string): Promise<AgentRunCancellationResult> {

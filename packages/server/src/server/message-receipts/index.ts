@@ -4,6 +4,8 @@ import path from "node:path";
 import { z } from "zod";
 import {
   AgentTurnSteerResultSchema,
+  AgentTurnCancelResultSchema,
+  type AgentTurnCancelResult,
   AgentSendIfIdleResultSchema,
   type AgentTurnSteerResult,
   type AgentSendIfIdleResult,
@@ -14,7 +16,9 @@ const ReceiptSchema = z.object({
   fingerprint: z.string(),
   state: z.enum(["pending", "completed"]),
   agentId: z.string(),
-  result: z.union([AgentSendIfIdleResultSchema, AgentTurnSteerResultSchema]).optional(),
+  result: z
+    .union([AgentSendIfIdleResultSchema, AgentTurnSteerResultSchema, AgentTurnCancelResultSchema])
+    .optional(),
 });
 interface SendMessageInput {
   agentId: string;
@@ -29,7 +33,10 @@ interface SteerMessageInput extends Omit<SendMessageInput, "send"> {
 interface IdleMessageInput extends Omit<SendMessageInput, "send"> {
   send: () => Promise<AgentSendIfIdleResult>;
 }
-type DeliveryResult = AgentTurnSteerResult | AgentSendIfIdleResult | void;
+interface CancelTurnInput extends Omit<SendMessageInput, "send"> {
+  send: () => Promise<AgentTurnCancelResult>;
+}
+type DeliveryResult = AgentTurnSteerResult | AgentSendIfIdleResult | AgentTurnCancelResult | void;
 
 /** Owns message delivery receipts; creation is owned by CreationService. */
 export class MessageReceipts {
@@ -52,8 +59,14 @@ export class MessageReceipts {
     return AgentSendIfIdleResultSchema.parse(result);
   }
 
+  async cancelTurn(input: CancelTurnInput): Promise<AgentTurnCancelResult> {
+    const result = await this.deliver(input);
+    if (!result) throw new Error("agent_request_outcome_unknown");
+    return AgentTurnCancelResultSchema.parse(result);
+  }
+
   private deliver(
-    input: SendMessageInput | SteerMessageInput | IdleMessageInput,
+    input: SendMessageInput | SteerMessageInput | IdleMessageInput | CancelTurnInput,
   ): Promise<DeliveryResult> {
     // Preserve the existing on-disk identity and shape across daemon upgrades.
     const key = digest(["send", input.agentId, input.messageId]);
@@ -72,7 +85,7 @@ export class MessageReceipts {
 
   private async sendOnce(
     key: string,
-    input: SendMessageInput | SteerMessageInput | IdleMessageInput,
+    input: SendMessageInput | SteerMessageInput | IdleMessageInput | CancelTurnInput,
   ): Promise<DeliveryResult> {
     const file = path.join(this.directory, `${key}.json`);
     const fingerprint = digest(input.request);

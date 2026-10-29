@@ -470,7 +470,7 @@ export interface SessionOptions {
   worktreesRoot?: string;
   agentManager: AgentManager;
   agentStorage: AgentStorage;
-  messageReceipts: Pick<MessageReceipts, "send" | "steer" | "sendIfIdle">;
+  messageReceipts: Pick<MessageReceipts, "send" | "steer" | "sendIfIdle" | "cancelTurn">;
   agentMessages: AgentMessageDelivery;
   creationService: Pick<CreationService, "create" | "subscribe">;
   projectRegistry: ProjectRegistry;
@@ -830,7 +830,10 @@ export class Session {
   private readonly daemonSession: DaemonSession;
   private readonly hubExecutionController: HubExecutionController | null;
   private readonly workspaceScripts: WorkspaceScriptsService;
-  private readonly messageReceipts: Pick<MessageReceipts, "send" | "steer" | "sendIfIdle">;
+  private readonly messageReceipts: Pick<
+    MessageReceipts,
+    "send" | "steer" | "sendIfIdle" | "cancelTurn"
+  >;
   private readonly agentMessages: AgentMessageDelivery;
   private readonly createAgentLifecycleDispatch: CreateAgentLifecycleDispatch;
   private readonly creationService: Pick<CreationService, "create" | "subscribe">;
@@ -2888,6 +2891,8 @@ export class Session {
         return this.handleAgentTurnSteer(msg, source);
       case "agent.turn.send_if_idle.request":
         return this.handleAgentSendIfIdle(msg, source);
+      case "agent.turn.cancel.request":
+        return this.handleAgentTurnCancel(msg, source);
       case "wait_for_finish_request":
         return this.handleWaitForFinish(msg.agentId, msg.requestId, msg.timeoutMs);
       case "cancel_agent_request":
@@ -8372,6 +8377,39 @@ export class Session {
             result: null,
             error: errorToFriendlyMessage(error),
           },
+        },
+        source,
+      );
+    }
+  }
+
+  private async handleAgentTurnCancel(
+    msg: Extract<SessionInboundMessage, { type: "agent.turn.cancel.request" }>,
+    source?: object,
+  ): Promise<void> {
+    const identity = {
+      requestId: msg.requestId,
+      agentId: msg.agentId,
+      messageId: msg.messageId,
+      expectedTurnId: msg.expectedTurnId,
+    };
+    try {
+      const result = await this.messageReceipts.cancelTurn({
+        agentId: msg.agentId,
+        messageId: msg.messageId,
+        request: { operation: "cancel-turn", expectedTurnId: msg.expectedTurnId },
+        // A turn cancellation must not load or create a replacement provider session.
+        send: () => this.agentManager.cancelAgentTurn(msg.agentId, msg.expectedTurnId),
+      });
+      this.emitForSource(
+        { type: "agent.turn.cancel.response", payload: { ...identity, result, error: null } },
+        source,
+      );
+    } catch (error) {
+      this.emitForSource(
+        {
+          type: "agent.turn.cancel.response",
+          payload: { ...identity, result: null, error: errorToFriendlyMessage(error) },
         },
         source,
       );

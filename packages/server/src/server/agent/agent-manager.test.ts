@@ -1166,6 +1166,117 @@ async function startAndSteerThroughManager(
   return { manager, agentId: agent.id, workdir };
 }
 
+test("exact-turn cancel waits for its turn to settle without using the unconditional interrupt", async () => {
+  const entered = deferred<void>();
+  const release = deferred<void>();
+  class ExactCancelSession extends SteeringTestSession {
+    async cancelTurn(expectedTurnId: string) {
+      expect(expectedTurnId).toBe("active-turn-1");
+      entered.resolve();
+      await release.promise;
+      this.pushEvent({ type: "turn_canceled", provider: "codex", turnId: expectedTurnId });
+      return { status: "accepted" as const };
+    }
+  }
+  const session = new ExactCancelSession({ provider: "codex", cwd: process.cwd() });
+  const { manager, agentId, workdir } = await startAndSteerThroughManager(session);
+  try {
+    let finished = false;
+    const cancel = manager.cancelAgentTurn(agentId, "active-turn-1").then((result) => {
+      finished = true;
+      return result;
+    });
+    await entered.promise;
+    expect(finished).toBe(false);
+    const later = manager.sendAgentMessageIfIdle(agentId, "next human turn");
+    expect(session.startCount).toBe(1);
+    release.resolve();
+    await expect(cancel).resolves.toEqual({ status: "cancelled" });
+    await expect(later).resolves.toEqual({ status: "accepted", turnId: "active-turn-2" });
+    expect(session.interruptCount).toBe(0);
+    expect(session.startCount).toBe(2);
+  } finally {
+    release.resolve();
+    await manager.closeAgent(agentId);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("exact-turn cancel rejects a turn changed while queued without touching its successor", async () => {
+  const entered = deferred<void>();
+  const release = deferred<void>();
+  class HeldSession extends SteeringTestSession {
+    cancelTurn = vi.fn(async () => ({ status: "accepted" as const }));
+    override async steerActiveTurn(
+      prompt: AgentPromptInput,
+      options: import("./agent-sdk-types.js").SteerActiveTurnOptions,
+    ) {
+      if (prompt === "held") {
+        entered.resolve();
+        await release.promise;
+      }
+      return super.steerActiveTurn(prompt, options);
+    }
+  }
+  const session = new HeldSession({ provider: "codex", cwd: process.cwd() });
+  const { manager, agentId, workdir } = await startAndSteerThroughManager(session);
+  try {
+    const held = manager.steerAgentRun(agentId, "held", { expectedTurnId: "active-turn-1" });
+    await entered.promise;
+    const cancel = manager.cancelAgentTurn(agentId, "active-turn-1");
+    session.pushEvent({ type: "turn_completed", provider: "codex", turnId: "active-turn-1" });
+    session.pushEvent({ type: "turn_started", provider: "codex", turnId: "native-B" });
+    release.resolve();
+    await held;
+    await expect(cancel).resolves.toEqual({ status: "changed" });
+    await expect(manager.cancelAgentTurn(agentId, "native-B")).resolves.toEqual({
+      status: "unavailable",
+    });
+    expect(session.cancelTurn).not.toHaveBeenCalled();
+    expect(session.interruptCount).toBe(0);
+    expect(manager.getAgent(agentId)?.activeTurnId).toBe("native-B");
+  } finally {
+    release.resolve();
+    await manager.closeAgent(agentId);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("exact-turn cancel does not treat provider acknowledgement as terminal evidence", async () => {
+  class AckOnlySession extends SteeringTestSession {
+    async cancelTurn() {
+      return { status: "accepted" as const };
+    }
+  }
+  const session = new AckOnlySession({ provider: "codex", cwd: process.cwd() });
+  const { manager, agentId, workdir } = await startAndSteerThroughManager(session);
+  try {
+    await expect(manager.cancelAgentTurn(agentId, "active-turn-1")).rejects.toThrow(
+      "agent_turn_cancel_outcome_unknown",
+    );
+    expect(manager.getAgent(agentId)?.activeTurnId).toBe("active-turn-1");
+    expect(session.interruptCount).toBe(0);
+  } finally {
+    await manager.closeAgent(agentId);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("exact-turn cancel does not fall back when provider support is unavailable", async () => {
+  const session = new SteeringTestSession({ provider: "codex", cwd: process.cwd() });
+  const { manager, agentId, workdir } = await startAndSteerThroughManager(session);
+  try {
+    await expect(manager.cancelAgentTurn(agentId, "active-turn-1")).resolves.toEqual({
+      status: "unavailable",
+    });
+    expect(session.interruptCount).toBe(0);
+    expect(manager.getAgent(agentId)?.activeTurnId).toBe("active-turn-1");
+  } finally {
+    await manager.closeAgent(agentId);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("send-if-idle reserves the pending start and rejects concurrent input without steering", async () => {
   const entered = deferred<void>();
   const release = deferred<void>();

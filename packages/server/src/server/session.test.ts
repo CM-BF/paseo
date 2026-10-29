@@ -470,6 +470,79 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
   return new Session(sessionOptions);
 }
 
+test.each(["cancelled", "changed", "unavailable"] as const)(
+  "exact-turn cancel RPC replays %s only to the caller without reopening or cancelling another turn",
+  async (status) => {
+    const directory = mkdtempSync(join(tmpdir(), "paseo-exact-cancel-"));
+    const messages: SessionOutboundMessage[] = [];
+    const targetedMessages: Array<{ source: object; message: SessionOutboundMessage }> = [];
+    const cancelAgentTurn = vi.fn(async () => ({ status }));
+    const first = createSessionForTest({
+      messages,
+      targetedMessages,
+      messageReceipts: new MessageReceipts(directory),
+      agentManager: { cancelAgentTurn },
+    });
+    const second = createSessionForTest({
+      messages,
+      targetedMessages,
+      messageReceipts: new MessageReceipts(directory),
+      agentManager: { cancelAgentTurn },
+    });
+    const source = {},
+      retrySource = {};
+    first.updateClientCapabilities({ selective_agent_timeline: true }, source);
+    second.updateClientCapabilities({ selective_agent_timeline: true }, retrySource);
+    const request = {
+      type: "agent.turn.cancel.request" as const,
+      requestId: "first",
+      agentId: "agent",
+      expectedTurnId: "A",
+      messageId: "cancel",
+    };
+    try {
+      await first.handleMessage(request, source);
+      await second.handleMessage({ ...request, requestId: "retry" }, retrySource);
+      expect(cancelAgentTurn).toHaveBeenCalledExactlyOnceWith("agent", "A");
+      expect(messages).toEqual([]);
+      expect(targetedMessages).toEqual([
+        {
+          source,
+          message: {
+            type: "agent.turn.cancel.response",
+            payload: {
+              requestId: "first",
+              agentId: "agent",
+              expectedTurnId: "A",
+              messageId: "cancel",
+              result: { status },
+              error: null,
+            },
+          },
+        },
+        {
+          source: retrySource,
+          message: {
+            type: "agent.turn.cancel.response",
+            payload: {
+              requestId: "retry",
+              agentId: "agent",
+              expectedTurnId: "A",
+              messageId: "cancel",
+              result: { status },
+              error: null,
+            },
+          },
+        },
+      ]);
+    } finally {
+      await first.cleanup();
+      await second.cleanup();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  },
+);
+
 test.each([{ status: "accepted" as const, turnId: "turn-A" }, { status: "busy" as const }])(
   "send-if-idle RPC replays $status only to its requesting source",
   async (result) => {

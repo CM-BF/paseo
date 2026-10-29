@@ -13,6 +13,8 @@ import type {
   AgentSnapshotPayload,
   AgentInstructionsUpdate,
   AgentTurnSteerOptions,
+  AgentTurnCancelOptions,
+  AgentTurnCancelResult,
   AgentTurnSteerResult,
   AgentSendIfIdleOptions,
   AgentSendIfIdleResult,
@@ -134,6 +136,8 @@ export type PaseoWorkspace = WorkspaceDescriptorPayload;
 export type PaseoAgent = AgentSnapshotPayload;
 export type PaseoAgentInstructionsUpdateOptions = AgentInstructionsUpdate;
 export type PaseoAgentSteerOptions = AgentTurnSteerOptions;
+export type PaseoAgentCancelTurnOptions = AgentTurnCancelOptions;
+export type PaseoAgentCancelTurnResult = AgentTurnCancelResult;
 export type PaseoAgentSteerResult = AgentTurnSteerResult;
 export type PaseoAgentSendIfIdleOptions = AgentSendIfIdleOptions;
 export type PaseoAgentSendIfIdleResult = AgentSendIfIdleResult;
@@ -409,6 +413,8 @@ export interface PaseoAgentHandle {
   ): Promise<PaseoAgentSendIfIdleResult>;
   /** Appends only to the specified active turn. Never starts or replaces a turn. */
   steer(text: string, options: PaseoAgentSteerOptions): Promise<PaseoAgentSteerResult>;
+  /** Cancels only the specified turn. Never interrupts a later turn. */
+  cancelTurn(options: PaseoAgentCancelTurnOptions): Promise<PaseoAgentCancelTurnResult>;
   /** Changes the model within this agent's provider; null restores the default. */
   setModel(modelId: string | null): Promise<void>;
   /** Returns the provider notice, if any; null restores the default option. */
@@ -1041,6 +1047,7 @@ function createAgentHandleFactory(
       },
       steer: (text, options) => daemonClient.steerAgentTurn(id, text, options),
       sendIfIdle: (text, options) => daemonClient.sendAgentMessageIfIdle(id, text, options),
+      cancelTurn: (options) => daemonClient.cancelAgentTurn(id, options),
       setModel: (modelId) => daemonClient.setAgentModel(id, modelId),
       setThinkingOption: (thinkingOptionId) =>
         daemonClient.setAgentThinkingOption(id, thinkingOptionId),

@@ -53,6 +53,50 @@ test("ambiguous provider delivery is never blindly replayed after restart", asyn
   expect(deliveries).toBe(1);
 });
 
+test.each(["cancelled", "changed", "unavailable"] as const)(
+  "exact-turn cancel persists %s and rejects a changed target after reconstruction",
+  async (status) => {
+    const { requests, directory } = await fixture();
+    let calls = 0;
+    const input = {
+      agentId: "agent",
+      messageId: "cancel",
+      request: { operation: "cancel-turn", expectedTurnId: "A" },
+      send: async () => {
+        calls++;
+        return { status };
+      },
+    };
+    await expect(
+      Promise.all([requests.cancelTurn(input), requests.cancelTurn(input)]),
+    ).resolves.toEqual([{ status }, { status }]);
+    await expect(new MessageReceipts(directory).cancelTurn(input)).resolves.toEqual({ status });
+    await expect(
+      requests.cancelTurn({ ...input, request: { ...input.request, expectedTurnId: "B" } }),
+    ).rejects.toThrow("agent_request_key_conflict");
+    expect(calls).toBe(1);
+  },
+);
+
+test("an ambiguous exact cancel stays pending after reconstruction without stopping twice", async () => {
+  const { requests, directory } = await fixture();
+  let calls = 0;
+  const input = {
+    agentId: "agent",
+    messageId: "cancel",
+    request: { operation: "cancel-turn", expectedTurnId: "A" },
+    send: async () => {
+      calls++;
+      throw new Error("lost cancel ACK");
+    },
+  };
+  await expect(requests.cancelTurn(input)).rejects.toThrow("lost cancel ACK");
+  await expect(new MessageReceipts(directory).cancelTurn(input)).rejects.toThrow(
+    "agent_request_outcome_unknown",
+  );
+  expect(calls).toBe(1);
+});
+
 test("failed local message preparation does not leave an ambiguous receipt", async () => {
   const { requests, directory } = await fixture();
   let available = false;

@@ -22,6 +22,7 @@ type OptionalAgentSessionMethodName = {
 
 const OPTIONAL_AGENT_SESSION_METHOD_NAMES = [
   "steerActiveTurn",
+  "cancelTurn",
   "listCommands",
   "setModel",
   "setThinkingOption",
@@ -245,5 +246,19 @@ describe("wrapSessionProvider", () => {
     const session: AgentSession = new FakeSession();
     session.steerActiveTurn = undefined;
     expect(wrapSessionProvider("custom-claude", session).steerActiveTurn).toBeUndefined();
+  });
+
+  test("forwards exact cancel to its provider and does not invent a legacy fallback", async () => {
+    const session: AgentSession = new FakeSession();
+    expect(wrapSessionProvider("custom-claude", session).cancelTurn).toBeUndefined();
+    session.cancelTurn = async function (expectedTurnId) {
+      expect(this).toBe(session);
+      expect(expectedTurnId).toBe("turn-1");
+      return { status: "unavailable" };
+    };
+    await expect(
+      wrapSessionProvider("custom-claude", session).cancelTurn!("turn-1"),
+    ).resolves.toEqual({ status: "unavailable" });
+    expect((session as FakeSession).recordedCalls).toEqual([]);
   });
 });

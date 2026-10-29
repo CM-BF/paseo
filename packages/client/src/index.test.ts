@@ -390,6 +390,51 @@ test("instruction updates require host support before sending a request", async 
   await client.close();
 });
 
+test("exact-turn cancel rejects old hosts without sending an unconditional cancellation", async () => {
+  const { client, ws } = await connectClient();
+  const before = ws.sent.length;
+  await expect(
+    client.agents.ref("agent").cancelTurn({ expectedTurnId: "A", messageId: "cancel" }),
+  ).rejects.toMatchObject({ code: "unsupported_capability" });
+  expect(ws.sent).toHaveLength(before);
+  await client.close();
+});
+
+test.each(["cancelled", "changed", "unavailable"] as const)(
+  "exact-turn cancel returns %s without falling back",
+  async (status) => {
+    const { client, ws } = await connectClient({ agentTurnCancel: true });
+    const before = ws.sent.length;
+    const pending = client.agents
+      .ref("agent")
+      .cancelTurn({ expectedTurnId: "A", messageId: "cancel" });
+    const request = parseSentSessionMessage(ws.sent.at(-1));
+    expect(request).toEqual({
+      type: "agent.turn.cancel.request",
+      agentId: "agent",
+      expectedTurnId: "A",
+      messageId: "cancel",
+      requestId: expect.any(String),
+    });
+    ws.message(
+      sessionMessage({
+        type: "agent.turn.cancel.response",
+        payload: {
+          requestId: request.requestId,
+          agentId: "agent",
+          expectedTurnId: "A",
+          messageId: "cancel",
+          result: { status },
+          error: null,
+        },
+      }),
+    );
+    await expect(pending).resolves.toEqual({ status });
+    expect(ws.sent).toHaveLength(before + 1);
+    await client.close();
+  },
+);
+
 test("send-if-idle rejects unsupported hosts before sending any legacy request", async () => {
   const { client, ws } = await connectClient();
   const before = ws.sent.length;

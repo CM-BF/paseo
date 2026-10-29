@@ -209,6 +209,9 @@ export interface AgentSteerOptions extends AgentRunOptions {
 }
 
 export type SteerResult = { status: "accepted" } | { status: "unavailable" };
+export interface TurnCancelAdmission {
+  status: "accepted" | "changed" | "unavailable";
+}
 
 export interface SteerActiveTurnOptions extends AgentSteerOptions {
   expectedTurnId: string;
@@ -697,6 +700,10 @@ export interface AgentSession {
    * still uncertain.
    */
   interrupt(): Promise<void>;
+  /** Interrupt only this Paseo turn, including after asynchronous native preparation.
+   * Providers without an atomic native identity check must leave this unimplemented.
+   * accepted acknowledges dispatch; the manager still waits for the owned run to settle. */
+  cancelTurn?(expectedTurnId: string): Promise<TurnCancelAdmission>;
   /** True only when releasing this runtime loses no background work or pending replies.
    * An optional additional veto: missing methods use daemon baseline eligibility;
    * implemented checks that reject or return false keep the runtime resident. */
