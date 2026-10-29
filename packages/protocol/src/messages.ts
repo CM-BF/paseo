@@ -2101,6 +2101,44 @@ export const AgentSendIfIdleResultSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("unavailable") }),
 ]);
 export type AgentSendIfIdleResult = z.infer<typeof AgentSendIfIdleResultSchema>;
+
+const AgentTurnReceiptIdentitySchema = z.object({
+  agentId: z.string(),
+  turnId: z.string().min(1),
+  clientMessageId: z.string().nullable(),
+});
+export const AgentTurnReceiptSchema = z.discriminatedUnion("status", [
+  AgentTurnReceiptIdentitySchema.extend({ status: z.literal("unknown") }),
+  AgentTurnReceiptIdentitySchema.extend({
+    status: z.literal("completed"),
+    observedAt: z.string(),
+  }),
+  AgentTurnReceiptIdentitySchema.extend({
+    status: z.literal("failed"),
+    observedAt: z.string(),
+  }),
+  AgentTurnReceiptIdentitySchema.extend({
+    status: z.literal("cancelled"),
+    observedAt: z.string(),
+  }),
+]);
+export type AgentTurnReceipt = z.infer<typeof AgentTurnReceiptSchema>;
+export const AgentTurnGetRequestMessageSchema = z.object({
+  type: z.literal("agent.turn.get.request"),
+  agentId: z.string(),
+  turnId: z.string().min(1),
+  requestId: z.string(),
+});
+export const AgentTurnGetResponseMessageSchema = z.object({
+  type: z.literal("agent.turn.get.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    turnId: z.string(),
+    receipt: AgentTurnReceiptSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
 export const AgentSendIfIdleRequestMessageSchema = AgentSendIfIdleOptionsSchema.extend({
   type: z.literal("agent.turn.send_if_idle.request"),
   agentId: z.string(),
@@ -3498,6 +3536,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   AgentInstructionsUpdateRequestMessageSchema,
   AgentTurnSteerRequestMessageSchema,
   AgentTurnCancelRequestMessageSchema,
+  AgentTurnGetRequestMessageSchema,
   AgentSendIfIdleRequestMessageSchema,
   AgentDetachRequestMessageSchema,
   AgentRewindRequestMessageSchema,
@@ -3786,6 +3825,7 @@ export const ServerInfoStatusPayloadSchema = z
         workspaceRequestReceipts: z.boolean().optional(),
         creationLifecycle: z.boolean().optional(),
         creationInitialPrompt: z.boolean().optional(),
+        agentTurnReceipts: z.boolean().optional(),
         nativeSkillMounts: z.boolean().optional(),
         // COMPAT(hubAgentRpc): added in v0.8.0; remove gate after 2027-03-05.
         hubAgentRpc: z.boolean().optional(),
@@ -7271,6 +7311,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   AgentInstructionsUpdateResponseMessageSchema,
   AgentTurnSteerResponseMessageSchema,
   AgentTurnCancelResponseMessageSchema,
+  AgentTurnGetResponseMessageSchema,
   AgentSendIfIdleResponseMessageSchema,
   AgentDetachResponseMessageSchema,
   AgentRewindResponseMessageSchema,

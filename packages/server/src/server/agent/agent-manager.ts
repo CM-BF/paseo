@@ -23,7 +23,8 @@ import {
 import type { Logger } from "pino";
 import type { ToolPolicy } from "@getpaseo/protocol/agent-types";
 import { NativeSkillMountError, validateNativeSkillMounts } from "./native-skill-mounts.js";
-import type { AgentInstructionsUpdate } from "@getpaseo/protocol/messages";
+import type { AgentInstructionsUpdate, AgentTurnReceipt } from "@getpaseo/protocol/messages";
+import type { AgentTurnReceipts } from "./agent-turn-receipts.js";
 import type { ProviderPaseoToolsPolicy } from "@getpaseo/protocol/provider-config";
 import { z } from "zod";
 import type { TerminalManager } from "../../terminal/terminal-manager.js";
@@ -371,6 +372,7 @@ export interface AgentManagerOptions {
   providerDefinitions?: ProviderEnabledMap;
   idFactory?: () => string;
   registry?: AgentStorage;
+  turnReceipts?: AgentTurnReceipts;
   onAgentAttention?: AgentAttentionCallback;
   onWorkspaceStateMayHaveChanged?: (params: { cwd: string }) => void;
   timelineStore?: InMemoryAgentTimelineStore;
@@ -648,7 +650,12 @@ function isAgentBusy(status: AgentLifecycleStatus): boolean {
   return BUSY_STATUSES.has(status);
 }
 
-function isTurnTerminalEvent(event: AgentStreamEvent): boolean {
+function isTurnTerminalEvent(
+  event: AgentStreamEvent,
+): event is Extract<
+  AgentStreamEvent,
+  { type: "turn_completed" | "turn_failed" | "turn_canceled" }
+> {
   return (
     event.type === "turn_completed" ||
     event.type === "turn_failed" ||
@@ -813,6 +820,7 @@ export class AgentManager {
   private readonly subscribers = new Set<SubscriptionRecord>();
   private readonly idFactory: () => string;
   private readonly registry?: AgentStorage;
+  private readonly turnReceipts?: AgentTurnReceipts;
   private readonly durableTimelineStore?: AgentTimelineStore;
   private readonly previousStatuses = new Map<string, AgentLifecycleStatus>();
   private readonly backgroundTasks = new Set<Promise<void>>();
@@ -863,6 +871,7 @@ export class AgentManager {
     this.timelineStore = options.timelineStore ?? new InMemoryAgentTimelineStore();
     this.idFactory = options.idFactory ?? (() => randomUUID());
     this.registry = options?.registry;
+    this.turnReceipts = options.turnReceipts;
     this.durableTimelineStore = options?.durableTimelineStore;
     this.onAgentAttention = options?.onAgentAttention;
     this.onWorkspaceStateMayHaveChanged = options?.onWorkspaceStateMayHaveChanged;
@@ -3213,6 +3222,12 @@ export class AgentManager {
     };
   }
 
+  /** Reads only durable observations; never loads a session or consults current liveness. */
+  async getTurnReceipt(agentId: string, turnId: string): Promise<AgentTurnReceipt> {
+    if (!this.turnReceipts) throw new Error("agent_turn_receipts_unavailable");
+    return this.turnReceipts.get(agentId, turnId);
+  }
+
   /**
    * Try to run a prompt out-of-band — i.e. without allocating a foreground turn
    * and without canceling any active turn. Returns true when the session
@@ -3417,6 +3432,21 @@ export class AgentManager {
     return this.streamAgentWithAdmission(agentId, prompt, options);
   }
 
+  private persistAcceptedTurn(
+    agent: ActiveManagedAgent,
+    turnId: string,
+    options?: AgentRunOptions,
+  ): Promise<void> | undefined {
+    if (!this.turnReceipts || agent.internal) return;
+    return this.turnReceipts.accepted(agent.id, turnId, options?.clientMessageId).catch((err) => {
+      // Native admission already happened. Persistence failure cannot turn it into not-sent.
+      this.logger.error(
+        { err, agentId: agent.id, turnId },
+        "Failed to persist accepted turn identity",
+      );
+    });
+  }
+
   private streamAgentWithAdmission(
     agentId: string,
     prompt: AgentPromptInput,
@@ -3477,6 +3507,8 @@ export class AgentManager {
         options,
         start,
       });
+      const acceptedReceipt = this.persistAcceptedTurn(agent, turnId, options);
+      if (acceptedReceipt) await acceptedReceipt;
       agent.lastError = undefined;
 
       if (isReplacement) {
@@ -4887,7 +4919,7 @@ export class AgentManager {
           },
           "agent.manager.dequeue",
         );
-        await this.dispatchSessionEvent(current, event);
+        await this.dispatchSessionEvent(current, event, true);
         return;
       })
       .catch((err) => {
@@ -4927,6 +4959,7 @@ export class AgentManager {
   private async dispatchSessionEvent(
     agent: ActiveManagedAgent,
     event: AgentStreamEvent,
+    fromProvider = false,
   ): Promise<void> {
     if (event.type === "provider_subagent") {
       const update = this.providerSubagents.apply(agent.id, event.provider, event.event);
@@ -4934,6 +4967,30 @@ export class AgentManager {
       return;
     }
     const turnId = getAgentStreamEventTurnId(event);
+    if (
+      fromProvider &&
+      this.turnReceipts &&
+      turnId &&
+      isTurnTerminalEvent(event) &&
+      event.terminalVerification?.turnId === turnId &&
+      !agent.internal
+    ) {
+      // Only a live provider-adapter event with its own exact ID is evidence. Do not
+      // record inferred IDs, history, close-waiter notifications, or forced rescue cancels.
+      const status = {
+        turn_completed: "completed",
+        turn_failed: "failed",
+        turn_canceled: "cancelled",
+      } as const;
+      await this.turnReceipts.terminal(agent.id, turnId, status[event.type]).catch((err) => {
+        // Keep legacy live delivery working; read-only recovery still reports unknown.
+        // A live event is not a durable receipt when the disk write failed.
+        this.logger.error(
+          { err, agentId: agent.id, turnId },
+          "Failed to persist terminal turn receipt",
+        );
+      });
+    }
     const matchingWaiters = this.runs.getMatchingWaiters(agent, turnId);
     this.logger.trace(
       {

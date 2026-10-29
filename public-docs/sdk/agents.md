@@ -89,6 +89,52 @@ Pass the required shared context explicitly and retain each execution's agent/tu
 do not present the executions as one continuous native session. This does not provide exact
 cancellation of autonomous provider successors; see the provider boundary below.
 
+## Recover a turn after disconnect
+
+Use `agents.supportsInitialPromptReservation()` to check the connected host before creating
+reserved first-prompt work. Still pass `requireInitialPromptReservation: true`: the SDK checks
+again before sending and during creation recovery. An older host rejects with
+`PaseoUnsupportedCapabilityError`, `code: "unsupported_capability"` and
+`capability: "creationInitialPrompt"`, without receiving the create request. Capability queries
+return false before handshake, after disconnect/disposal, or on a host without that feature.
+
+When `agents.supportsTurnReceipts()` is true, query the exact accepted turn:
+
+```ts
+const creation = await client.creations.get({ kind: "agent", idempotencyKey });
+if (creation?.agentId && creation.initialPrompt?.status === "accepted") {
+  const result = await client.agents.ref(creation.agentId).turns.get({
+    turnId: creation.initialPrompt.turnId,
+  });
+  console.log(result.status, result.clientMessageId);
+}
+```
+
+Currently Codex verifies foreground terminal notifications against the native `turn/start` ACK.
+Other providers and autonomous turns return `unknown` until their adapters supply equivalent
+verification. The host feature advertises this query API, not complete provider coverage.
+
+The receipt uses the same Paseo provider-adapter `turnId` returned by initial-prompt admission,
+not a provider's raw protocol ID. Its key also includes the agent ID. It returns `completed`,
+`failed`, `cancelled`, or `unknown`, with the original `clientMessageId` when observed. A terminal
+receipt includes `observedAt` and survives disconnects, daemon restarts, runtime closure and
+agent deletion. Later human turns cannot replace it. It proves a turn ended, not that the task
+succeeded or that its final text is correct.
+
+`unknown` means no durable, exact terminal observation is available. It includes a running
+turn, a crash before persistence, old history, and provider events without a turn ID. It never
+means not-sent and must not trigger automatic resend. Queries read the receipt store only;
+they do not resume a provider, unarchive an agent, poll its current status, or infer completion
+from its final text. Unsupported hosts reject before the query is sent, with capability
+`agentTurnReceipts`.
+
+The daemon awaits terminal persistence before publishing live events. If that write fails,
+it logs the failure and continues existing live event/waiter delivery; recovery remains unknown.
+Unreadable or corrupt receipt files fail the query rather than reporting a verified outcome.
+Live events and `waitForFinish()` are not durable receipts. Synthetic shutdown/rescue cancellation
+notifications and imported history do not establish a terminal receipt. Internal ephemeral
+agents do not write these durable records.
+
 ## Keep a session alive for follow-ups
 
 Create an idle session when prompts arrive later:

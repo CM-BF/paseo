@@ -2253,3 +2253,22 @@ test("public creation lookup preserves receipt scope and never calls create", as
     await client.close();
   }
 });
+
+test.each([undefined, false, true])(
+  "fresh execution capability queries follow the live host handshake (%s)",
+  async (enabled) => {
+    const { client, ws } = await connectClient(
+      enabled === undefined ? {} : { creationInitialPrompt: enabled, agentTurnReceipts: enabled },
+    );
+    const before = ws.sent.length;
+    expect(client.agents.supportsInitialPromptReservation()).toBe(enabled === true);
+    expect(client.agents.supportsTurnReceipts()).toBe(enabled === true);
+    expect(ws.sent).toHaveLength(before);
+    ws.onclose?.({ code: 1006, reason: "Connection lost" });
+    expect(client.agents.supportsInitialPromptReservation()).toBe(false);
+    expect(client.agents.supportsTurnReceipts()).toBe(false);
+    await client.close();
+    expect(client.agents.supportsInitialPromptReservation()).toBe(false);
+    expect(client.agents.supportsTurnReceipts()).toBe(false);
+  },
+);

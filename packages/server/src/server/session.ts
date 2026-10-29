@@ -2895,6 +2895,8 @@ export class Session {
         return this.handleAgentSendIfIdle(msg, source);
       case "agent.turn.cancel.request":
         return this.handleAgentTurnCancel(msg, source);
+      case "agent.turn.get.request":
+        return this.handleAgentTurnGet(msg, source);
       case "wait_for_finish_request":
         return this.handleWaitForFinish(msg.agentId, msg.requestId, msg.timeoutMs);
       case "cancel_agent_request":
@@ -8414,6 +8416,31 @@ export class Session {
             result: null,
             error: errorToFriendlyMessage(error),
           },
+        },
+        source,
+      );
+    }
+  }
+
+  private async handleAgentTurnGet(
+    msg: Extract<SessionInboundMessage, { type: "agent.turn.get.request" }>,
+    source?: object,
+  ): Promise<void> {
+    const identity = { requestId: msg.requestId, agentId: msg.agentId, turnId: msg.turnId };
+    try {
+      const receipt = await this.agentManager.getTurnReceipt(msg.agentId, msg.turnId);
+      this.emitForSource(
+        {
+          type: "agent.turn.get.response",
+          payload: { ...identity, receipt, error: null },
+        },
+        source,
+      );
+    } catch (error) {
+      this.emitForSource(
+        {
+          type: "agent.turn.get.response",
+          payload: { ...identity, receipt: null, error: errorToFriendlyMessage(error) },
         },
         source,
       );

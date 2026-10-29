@@ -97,6 +97,7 @@ import {
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 import { asInternals as castInternals, createStub } from "../../test-utils/class-mocks.js";
 import { AgentManager } from "../agent-manager.js";
+import { AgentTurnReceipts } from "../agent-turn-receipts.js";
 import { buildProviderRegistry } from "../provider-registry.js";
 
 interface CollaborationModeRecord {
@@ -522,7 +523,10 @@ async function startCompactionTurnTest(): Promise<{
   });
 
   await session.startTurn("exercise compaction lifecycle");
-  appServer.startsTurn({ threadId: "thread-1", turnId: "codex-turn-1" });
+  appServer.startsTurn({
+    threadId: "thread-1",
+    turnId: expect.stringMatching(/^codex-turn-[0-9a-f-]+-1$/),
+  });
   await new Promise<void>((resolve) => setImmediate(resolve));
   return { appServer, session, events, terminalEvent };
 }
@@ -4487,7 +4491,7 @@ describe("Codex app-server provider", () => {
       await expect(child).resolves.toMatchObject({
         type: "provider_subagent",
         provider: "codex",
-        turnId: "codex-turn-0",
+        turnId: expect.stringMatching(/^codex-turn-[0-9a-f-]+-0$/),
         event: {
           type: "upsert",
           id: "legacy-only-child-thread",
@@ -4497,7 +4501,7 @@ describe("Codex app-server provider", () => {
       await expect(spawn).resolves.toMatchObject({
         type: "timeline",
         provider: "codex",
-        turnId: "codex-turn-0",
+        turnId: expect.stringMatching(/^codex-turn-[0-9a-f-]+-0$/),
         item: {
           type: "tool_call",
           callId: "spawn-legacy-only-child",
@@ -7600,4 +7604,248 @@ test("publishes a materialized image before dispatching the following turn compl
   } finally {
     await session.close();
   }
+});
+
+describe("Codex durable terminal identity", () => {
+  test.each([
+    { type: "task_complete", fields: {}, status: "unknown" },
+    { type: "turn_aborted", fields: {}, status: "unknown" },
+    { type: "turn_aborted", fields: { turn_id: null }, status: "unknown" },
+    { type: "task_complete", fields: { turn_id: "native-legacy" }, status: "completed" },
+    { type: "turn_aborted", fields: { turn_id: "native-legacy" }, status: "cancelled" },
+    {
+      type: "task_complete",
+      fields: { turn_id: "native-legacy", error: { message: "native failure" } },
+      status: "failed",
+    },
+  ])(
+    "legacy $type with $fields records only explicit native evidence ($status)",
+    async ({ type, fields, status }) => {
+      const directory = await mkdtemp(path.join(tmpdir(), "codex-legacy-receipts-"));
+      const receipts = new AgentTurnReceipts(directory);
+      const appServer = createFakeCodexAppServer({
+        "turn/start": () => {
+          appServer.startsTurn({ threadId: "thread-1", turnId: "native-legacy" });
+          return { turn: { id: "native-legacy", status: "inProgress" } };
+        },
+      });
+      const provider = createProviderWithFakeAppServer(appServer);
+      let session: AgentSession | undefined;
+      const events: AgentStreamEvent[] = [];
+      const client: AgentClient = {
+        provider: "codex",
+        capabilities: provider.capabilities,
+        isAvailable: async () => true,
+        fetchCatalog: async () => ({ models: [], modes: [] }),
+        createSession: async (...args) => {
+          session = await provider.createSession(...args);
+          session.subscribe((event) => events.push(event));
+          return session;
+        },
+        resumeSession: (...args) => provider.resumeSession(...args),
+      };
+      const manager = new AgentManager({
+        clients: { codex: client },
+        turnReceipts: receipts,
+        logger: createTestLogger(),
+      });
+      let agentId: string | undefined;
+      try {
+        const agent = await manager.createAgent(createConfig({ cwd: directory }), undefined, {
+          workspaceId: "legacy-test",
+        });
+        agentId = agent.id;
+        const iterator = manager.streamAgent(agent.id, "legacy input", {
+          clientMessageId: "legacy-input",
+        });
+        const first = await iterator.next();
+        if (first.done || first.value.type !== "turn_started" || !first.value.turnId)
+          throw new Error("Missing accepted turn");
+        const turnId = first.value.turnId;
+        const drained = (async () => {
+          for await (const _ of iterator) {
+          }
+        })();
+        // A stale legacy native ID must not finish the current foreground turn.
+        await asInternals(session!).handleNotification(`codex/event/${type}`, {
+          threadId: "thread-1",
+          msg: { type, turn_id: "previous-native-turn" },
+        });
+        await manager.flush();
+        expect(manager.getAgent(agent.id)?.activeTurnId).toBe(turnId);
+        expect(await manager.getTurnReceipt(agent.id, turnId)).toMatchObject({ status: "unknown" });
+        await asInternals(session!).handleNotification(`codex/event/${type}`, {
+          threadId: "thread-1",
+          msg: { type, ...fields },
+        });
+        await drained;
+        const terminal = events.find(
+          (event) =>
+            event.type === "turn_completed" ||
+            event.type === "turn_failed" ||
+            event.type === "turn_canceled",
+        );
+        expect(terminal).toMatchObject({ turnId });
+        if (!terminal || !("terminalVerification" in terminal))
+          throw new Error("Missing terminal event");
+        expect(terminal.terminalVerification).toEqual(
+          status === "unknown" ? undefined : { turnId, nativeTurnId: "native-legacy" },
+        );
+        expect(await new AgentTurnReceipts(directory).get(agent.id, turnId)).toMatchObject({
+          agentId: agent.id,
+          turnId,
+          clientMessageId: "legacy-input",
+          status,
+        });
+      } finally {
+        if (agentId) await manager.closeAgent(agentId);
+        await manager.flush();
+        rmSync(directory, { recursive: true, force: true });
+        appServer.assertNoErrors();
+      }
+    },
+  );
+
+  test("real adapters preserve accepted IDs across resume and reject late native completions and local failures", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "codex-turn-receipts-"));
+    const receipts = new AgentTurnReceipts(directory);
+    const appServers: FakeCodexAppServer[] = [];
+    const provider = new CodexAppServerAgentClient(createTestLogger());
+    castInternals<{
+      goalsEnabledPromise: Promise<boolean> | null;
+      autoReviewEnabledPromise: Promise<boolean> | null;
+      spawnAppServer: () => Promise<ChildProcessWithoutNullStreams>;
+    }>(provider).goalsEnabledPromise = Promise.resolve(false);
+    castInternals<{ autoReviewEnabledPromise: Promise<boolean> | null }>(
+      provider,
+    ).autoReviewEnabledPromise = Promise.resolve(false);
+    castInternals<{ spawnAppServer: () => Promise<ChildProcessWithoutNullStreams> }>(
+      provider,
+    ).spawnAppServer = async () => {
+      let count = 0;
+      const appServer = createFakeCodexAppServer({
+        "turn/start": () => {
+          const id = `native-${++count}`;
+          appServer.startsTurn({ threadId: "saved-thread", turnId: id });
+          return { turn: { id, status: "inProgress" } };
+        },
+        "thread/resume": () => ({ thread: { id: "saved-thread", turns: [] } }),
+        "thread/read": () => ({ thread: { id: "saved-thread", turns: [] } }),
+      });
+      appServers.push(appServer);
+      return appServer.child;
+    };
+    const client: AgentClient = {
+      provider: "codex",
+      capabilities: provider.capabilities,
+      isAvailable: async () => true,
+      fetchCatalog: async () => ({ models: [], modes: [] }),
+      createSession: (...args) => provider.createSession(...args),
+      resumeSession: (...args) => provider.resumeSession(...args),
+    };
+    const manager = new AgentManager({
+      clients: { codex: client },
+      turnReceipts: receipts,
+      logger: createTestLogger(),
+    });
+    const id = "00000000-0000-4000-8000-000000000031";
+    const open = () =>
+      manager.resumeAgentFromPersistence(
+        { provider: "codex", sessionId: "saved-thread" },
+        createConfig({ cwd: directory }),
+        id,
+      );
+    const complete = (appServer: FakeCodexAppServer, nativeId: string) =>
+      appServer.child.stdout.write(
+        `${JSON.stringify({ method: "turn/completed", params: { threadId: "saved-thread", turn: { id: nativeId, status: "completed" } } })}\n`,
+      );
+    const begin = async (clientMessageId: string) => {
+      const iterator = manager.streamAgent(id, clientMessageId, { clientMessageId });
+      const first = await iterator.next();
+      if (first.done || first.value.type !== "turn_started" || !first.value.turnId)
+        throw new Error("Missing accepted turn");
+      const turnId = first.value.turnId;
+      const drained = (async () => {
+        for await (const _ of iterator) {
+        }
+      })();
+      return { turnId, drained };
+    };
+    try {
+      await open();
+      const first = await begin("first-input");
+      complete(appServers[0]!, "native-1");
+      await first.drained;
+      expect(await manager.getTurnReceipt(id, first.turnId)).toMatchObject({
+        status: "completed",
+        clientMessageId: "first-input",
+      });
+      await manager.closeAgent(id);
+      await open();
+      const next = await begin("human-input");
+      expect(next.turnId).not.toBe(first.turnId);
+      expect(next.turnId).toMatch(/^codex-turn-[0-9a-f-]+-0$/);
+      complete(appServers[1]!, "native-1");
+      await next.drained;
+      const later = await begin("later-human-input");
+      complete(appServers[1]!, "native-1");
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await manager.flush();
+      expect(await manager.getTurnReceipt(id, later.turnId)).toMatchObject({
+        status: "unknown",
+        clientMessageId: "later-human-input",
+      });
+      expect(manager.getAgent(id)?.activeTurnId).toBe(later.turnId);
+      // A real transport exit creates a local failed event, not a proven native terminal.
+      appServers[1]!.disconnect();
+      await later.drained;
+      expect(await new AgentTurnReceipts(directory).get(id, later.turnId)).toMatchObject({
+        status: "unknown",
+      });
+      expect(await new AgentTurnReceipts(directory).get(id, first.turnId)).toMatchObject({
+        status: "completed",
+        clientMessageId: "first-input",
+      });
+      expect(await new AgentTurnReceipts(directory).get(id, next.turnId)).toMatchObject({
+        status: "completed",
+        clientMessageId: "human-input",
+      });
+    } finally {
+      await manager.closeAgent(id);
+      await manager.flush();
+      rmSync(directory, { recursive: true, force: true });
+      for (const server of appServers) server.assertNoErrors();
+    }
+  });
+
+  test("native completion before the start ACK is verified only against that ACK", async () => {
+    const appServer = createFakeCodexAppServer({
+      "turn/start": () => {
+        appServer.startsTurn({ threadId: "thread-1", turnId: "native-before-ack" });
+        appServer.child.stdout.write(
+          `${JSON.stringify({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "native-before-ack", status: "completed" } } })}\n`,
+        );
+        return { turn: { id: "native-before-ack" } };
+      },
+    });
+    const provider = createProviderWithFakeAppServer(appServer);
+    const session = await provider.createSession(createConfig({ cwd: process.cwd() }));
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+    try {
+      const { turnId } = await session.startTurn("first");
+      await vi.waitFor(() =>
+        expect(events).toContainEqual(
+          expect.objectContaining({
+            type: "turn_completed",
+            turnId,
+            terminalVerification: { turnId, nativeTurnId: "native-before-ack" },
+          }),
+        ),
+      );
+    } finally {
+      await session.close();
+      appServer.assertNoErrors();
+    }
+  });
 });

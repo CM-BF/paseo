@@ -42,6 +42,7 @@ test("server contribution can use its connected API before any RPC and receives 
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 export default function contribute(server: PluginServerContext) {
   if (!server.paseo.agents.supportsNativeSkillMounts()) throw new Error("Missing connected host API");
+  if (!server.paseo.agents.supportsInitialPromptReservation() || !server.paseo.agents.supportsTurnReceipts()) throw new Error("Missing fresh execution capabilities");
   const startup = server.paseo.agents.list({ page: { limit: 1 } }).then(
     () => appendFile(${JSON.stringify(marker)}, "ready\\n"),
     (error) => appendFile(${JSON.stringify(marker)}, "error: " + error.message + "\\n"),
@@ -99,11 +100,25 @@ const client = createPaseoClient({ url, transportFactory: createHostTransportFac
   try {
     await client.connect();
     assert.equal(client.agents.supportsNativeSkillMounts(), true);
+    assert.equal(client.agents.supportsInitialPromptReservation(), true);
+    assert.equal(client.agents.supportsTurnReceipts(), true);
     const agent = await client.agents.create({
       config: { provider: "codex/test", skillMounts: [{ directory: ${JSON.stringify(directory)} }] },
       cwd: ${JSON.stringify(directory)}, prompt: "Use the fixture", requireInitialPromptReservation: true,
+      idempotencyKey: "fresh-fixture", clientMessageId: "fresh-input",
     });
     await agent.waitForFinish();
+    const creation = await client.creations.get({ kind: "agent", idempotencyKey: "fresh-fixture" });
+    assert.equal(creation.initialPrompt.status, "accepted");
+    const first = await agent.turns.get({ turnId: creation.initialPrompt.turnId });
+    assert.equal(first.status, "unknown"); // The generic fixture does not claim native terminal verification.
+    assert.equal(first.clientMessageId, "fresh-input");
+    await client.close();
+    const reconnected = createPaseoClient({ url, transportFactory: createHostTransportFactory(url) });
+    try {
+      await reconnected.connect();
+      assert.deepEqual(await reconnected.agents.ref(agent.id).turns.get({ turnId: first.turnId }), first);
+    } finally { await reconnected.close(); }
   } finally { await client.close(); }
   assert.equal(client.agents.supportsNativeSkillMounts(), false);
 })().catch((error) => { console.error(error); process.exitCode = 1; });`,

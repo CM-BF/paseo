@@ -682,3 +682,42 @@ test("native skill mount updates preserve omitted versus cleared mounts and reje
     }).success,
   ).toBe(false);
 });
+
+describe("durable turn receipts", () => {
+  test("queries an exact turn without prompt or subscription side effects", () => {
+    expect(
+      SessionInboundMessageSchema.parse({
+        type: "agent.turn.get.request",
+        agentId: "agent",
+        turnId: "exact-turn",
+        requestId: "query",
+      }),
+    ).toMatchObject({ turnId: "exact-turn" });
+    expect(
+      SessionInboundMessageSchema.safeParse({
+        type: "agent.turn.get.request",
+        agentId: "agent",
+        turnId: "",
+        requestId: "query",
+      }).success,
+    ).toBe(false);
+  });
+  test.each(["completed", "failed", "cancelled", "unknown"])(
+    "preserves %s and its message identity",
+    (status) => {
+      const receipt = {
+        agentId: "agent",
+        turnId: "turn",
+        clientMessageId: "initial-input",
+        status,
+        ...(status === "unknown" ? {} : { observedAt: "2026-10-29T00:00:00Z" }),
+      };
+      expect(
+        SessionOutboundMessageSchema.parse({
+          type: "agent.turn.get.response",
+          payload: { requestId: "query", agentId: "agent", turnId: "turn", receipt, error: null },
+        }),
+      ).toMatchObject({ payload: { receipt } });
+    },
+  );
+});

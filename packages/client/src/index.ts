@@ -1,6 +1,7 @@
 import type { AgentAddress } from "@getpaseo/protocol/addresses";
 import { parentAddressLabels } from "@getpaseo/protocol/agent-labels";
 export type { AgentAddress } from "@getpaseo/protocol/addresses";
+export { PaseoUnsupportedCapabilityError } from "./errors.js";
 import { createHostActions, type PaseoHostActions } from "./hosts/index.js";
 export type { PaseoHostActions } from "./hosts/index.js";
 export type { HostAdd, HostUpdate, HostSummary, HostDirectory } from "@getpaseo/protocol/hosts";
@@ -15,6 +16,7 @@ import type {
   AgentTurnSteerOptions,
   AgentTurnCancelOptions,
   AgentTurnCancelResult,
+  AgentTurnReceipt,
   AgentTurnSteerResult,
   AgentSendIfIdleOptions,
   AgentSendIfIdleResult,
@@ -138,6 +140,7 @@ export type PaseoAgentInstructionsUpdateOptions = AgentInstructionsUpdate;
 export type PaseoAgentSteerOptions = AgentTurnSteerOptions;
 export type PaseoAgentCancelTurnOptions = AgentTurnCancelOptions;
 export type PaseoAgentCancelTurnResult = AgentTurnCancelResult;
+export type PaseoAgentTurnReceipt = AgentTurnReceipt;
 export type PaseoAgentSteerResult = AgentTurnSteerResult;
 export type PaseoAgentSendIfIdleOptions = AgentSendIfIdleOptions;
 export type PaseoAgentSendIfIdleResult = AgentSendIfIdleResult;
@@ -401,6 +404,10 @@ export interface PaseoAgentHandle {
   readonly runtimeInfo: NonNullable<PaseoAgent["runtimeInfo"]> | null;
   readonly archivedAt: NonNullable<PaseoAgent["archivedAt"]> | null;
   readonly timeline: PaseoAgentTimelineHandle;
+  readonly turns: {
+    /** Exact durable terminal evidence; unknown never means not-sent. Does not load the provider. */
+    get(input: { turnId: string }): Promise<PaseoAgentTurnReceipt>;
+  };
   current(): PaseoAgent | null;
   refresh(requestId?: string): Promise<PaseoAgentRefetchResult | null>;
   /**
@@ -445,6 +452,10 @@ export interface PaseoAgentHandle {
 }
 
 export interface PaseoAgentActions {
+  /** True only while the connected host can reserve a create request's initial prompt. */
+  supportsInitialPromptReservation(): boolean;
+  /** True only while the connected host supports read-only durable turn receipts. */
+  supportsTurnReceipts(): boolean;
   /** True only while this host connection advertises native skill mounts. Provider support is checked on use. */
   supportsNativeSkillMounts(): boolean;
   list(options: PaseoAgentListOptions & { subscribe: {} }): Promise<
@@ -829,6 +840,14 @@ export function createPaseoApi(
       subscribe: listenWorkspaces,
     },
     agents: {
+      supportsInitialPromptReservation: () =>
+        !lifetime.signal.aborted &&
+        daemonClient.getConnectionState().status === "connected" &&
+        daemonClient.getLastServerInfoMessage()?.features?.creationInitialPrompt === true,
+      supportsTurnReceipts: () =>
+        !lifetime.signal.aborted &&
+        daemonClient.getConnectionState().status === "connected" &&
+        daemonClient.getLastServerInfoMessage()?.features?.agentTurnReceipts === true,
       supportsNativeSkillMounts: () =>
         !lifetime.signal.aborted &&
         daemonClient.getConnectionState().status === "connected" &&
@@ -1068,6 +1087,7 @@ function createAgentHandleFactory(
       steer: (text, options) => daemonClient.steerAgentTurn(id, text, options),
       sendIfIdle: (text, options) => daemonClient.sendAgentMessageIfIdle(id, text, options),
       cancelTurn: (options) => daemonClient.cancelAgentTurn(id, options),
+      turns: { get: ({ turnId }) => daemonClient.getAgentTurnReceipt(id, turnId) },
       setModel: (modelId) => daemonClient.setAgentModel(id, modelId),
       setThinkingOption: (thinkingOptionId) =>
         daemonClient.setAgentThinkingOption(id, thinkingOptionId),

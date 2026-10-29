@@ -16,11 +16,13 @@ import {
   type TimelineSubscription,
 } from "./connection/index.js";
 import { CreationClient } from "./creation/index.js";
+import { PaseoUnsupportedCapabilityError } from "./errors.js";
 import type { CreationSnapshot } from "@getpaseo/protocol/messages";
 import type {
   AgentTurnSteerOptions,
   AgentTurnCancelOptions,
   AgentTurnCancelResult,
+  AgentTurnReceipt,
   AgentTurnSteerResult,
   AgentSendIfIdleOptions,
   AgentSendIfIdleResult,
@@ -3281,7 +3283,10 @@ export class DaemonClient {
 
   private requireCreationInitialPrompt(): void {
     if (this.lastServerInfoMessage?.features?.creationInitialPrompt !== true) {
-      throw new Error("Update the host to reserve a new agent's initial prompt.");
+      throw new PaseoUnsupportedCapabilityError(
+        "creationInitialPrompt",
+        "Update the host to reserve a new agent's initial prompt.",
+      );
     }
   }
 
@@ -4117,6 +4122,25 @@ export class DaemonClient {
     });
     if (!payload.result) throw new Error(payload.error ?? "Conditional send failed");
     return payload.result;
+  }
+
+  async getAgentTurnReceipt(agentId: string, turnId: string): Promise<AgentTurnReceipt> {
+    // COMPAT(agentTurnReceipts): added in v0.14.0; remove after 2027-04-29 once the daemon floor supports it.
+    if (this.getLastServerInfoMessage()?.features?.agentTurnReceipts !== true) {
+      throw new PaseoUnsupportedCapabilityError(
+        "agentTurnReceipts",
+        "Update the host to query durable agent turn receipts.",
+      );
+    }
+    const payload = await this.sendCorrelatedSessionRequest({
+      message: { type: "agent.turn.get.request", agentId, turnId },
+      responseType: "agent.turn.get.response",
+    });
+    if (!payload.receipt) throw new Error(payload.error ?? "Turn receipt unavailable");
+    if (payload.receipt.agentId !== agentId || payload.receipt.turnId !== turnId) {
+      throw new Error("agent_turn_identity_conflict");
+    }
+    return payload.receipt;
   }
 
   async cancelAgentTurn(

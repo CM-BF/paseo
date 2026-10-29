@@ -20,6 +20,7 @@ import {
   type ManagedAgent,
 } from "./agent-manager.js";
 import { AgentStorage } from "./agent-storage.js";
+import { AgentTurnReceipts } from "./agent-turn-receipts.js";
 import { InMemoryAgentTimelineStore } from "./agent-timeline-store.js";
 import { toAgentPayload } from "./agent-projections.js";
 import { projectTimelineRows } from "./timeline-projection.js";
@@ -13476,4 +13477,208 @@ test("an out-of-band command racing idle cleanup waits for the resumed runtime",
   expect(await command).toEqual({ disposition: "out_of_band" });
   expect(h.commands).toEqual(["/maintenance"]);
   expect(h.prompts).toEqual([]);
+});
+
+function turnReceiptHarness(makeSession?: (config: AgentSessionConfig) => TestAgentSession) {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-turn-receipts-"));
+  const directory = join(workdir, "receipts");
+  const receipts = new AgentTurnReceipts(directory);
+  const sessions: TestAgentSession[] = [];
+  const client = new (class extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig) {
+      const session = makeSession?.(config) ?? new SteeringTestSession(config);
+      sessions.push(session);
+      return session;
+    }
+  })();
+  const manager = new AgentManager({ clients: { codex: client }, turnReceipts: receipts, logger });
+  onTestFinished(async () => {
+    await Promise.all(manager.listAgents().map((agent) => manager.closeAgent(agent.id)));
+    await manager.flush();
+    rmSync(workdir, { recursive: true, force: true });
+  });
+  return { manager, receipts, directory, sessions, workdir };
+}
+
+test.each(["turn_completed", "turn_failed", "turn_canceled"] as const)(
+  "turn receipts persist the exact initial accepted ID before publishing %s, across restart and later human input",
+  async (terminalType) => {
+    const h = turnReceiptHarness(
+      (config) =>
+        new (class extends TestAgentSession {
+          count = 0;
+          override async startTurn() {
+            const turnId = `adapter-foreground-${++this.count}`;
+            // Replay may finish before the native start ACK reaches AgentManager.
+            this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+            this.pushEvent({
+              type: terminalType,
+              provider: this.provider,
+              turnId,
+              error: "fixture failure",
+              reason: "fixture cancellation",
+              terminalVerification: { turnId, nativeTurnId: `native-${this.count}` },
+            });
+            return { turnId };
+          }
+        })(config),
+    );
+    const seen: Array<Promise<unknown>> = [];
+    h.manager.subscribe((event) => {
+      if (
+        event.type === "agent_stream" &&
+        event.event.type === terminalType &&
+        event.event.turnId
+      ) {
+        // A separate store instance cannot observe uncommitted in-memory state.
+        seen.push(new AgentTurnReceipts(h.directory).get(event.agentId, event.event.turnId));
+      }
+    });
+    const agentId = randomUUID();
+    const admission = await h.manager.withInitialPromptReservation(agentId, async (id, owner) => {
+      await h.manager.createAgent(
+        { provider: "codex", cwd: h.workdir },
+        id,
+        { workspaceId: undefined },
+        owner,
+      );
+      return h.manager.startCreatedAgentRun(
+        id,
+        "first",
+        { clientMessageId: "first-input" },
+        owner,
+        () => {},
+      );
+    });
+    expect(admission).toEqual({ disposition: "turn_started", turnId: "adapter-foreground-1" });
+    await h.manager.flush();
+    const status = {
+      turn_completed: "completed",
+      turn_failed: "failed",
+      turn_canceled: "cancelled",
+    }[terminalType];
+    const first = {
+      agentId,
+      turnId: "adapter-foreground-1",
+      clientMessageId: "first-input",
+      status,
+    };
+    expect(await h.manager.getTurnReceipt(agentId, "adapter-foreground-1")).toMatchObject(first);
+    expect(await seen[0]).toMatchObject(first);
+    await drainAsyncGenerator(
+      h.manager.streamAgent(agentId, "human follow-up", { clientMessageId: "human-input" }),
+    );
+    await h.manager.closeAgent(agentId);
+    const restarted = new AgentManager({
+      turnReceipts: new AgentTurnReceipts(h.directory),
+      logger,
+    });
+    expect(await restarted.getTurnReceipt(agentId, "adapter-foreground-1")).toMatchObject(first);
+    expect(await restarted.getTurnReceipt(agentId, "adapter-foreground-2")).toMatchObject({
+      clientMessageId: "human-input",
+      status,
+    });
+    expect(await restarted.getTurnReceipt("another-agent", "adapter-foreground-1")).toEqual({
+      agentId: "another-agent",
+      turnId: "adapter-foreground-1",
+      clientMessageId: null,
+      status: "unknown",
+    });
+    expect(restarted.listAgents()).toEqual([]);
+    // Conflicting late duplicates cannot overwrite a proven terminal outcome.
+    await new AgentTurnReceipts(h.directory).terminal(
+      agentId,
+      "adapter-foreground-1",
+      status === "failed" ? "completed" : "failed",
+    );
+    expect(await restarted.getTurnReceipt(agentId, "adapter-foreground-1")).toMatchObject(first);
+  },
+);
+
+test("turn receipts do not infer terminal evidence from missing IDs, idle, or close notifications", async () => {
+  const h = turnReceiptHarness();
+  const agent = await h.manager.createAgent({ provider: "codex", cwd: h.workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const iterator = h.manager.streamAgent(agent.id, "first", { clientMessageId: "input" });
+  await iterator.next();
+  const drained = drainAsyncGenerator(iterator);
+  h.sessions[0]!.pushEvent({ type: "turn_completed", provider: "codex" });
+  await h.manager.flush();
+  expect(h.manager.getAgent(agent.id)?.lifecycle).toBe("idle");
+  expect(await h.manager.getTurnReceipt(agent.id, "active-turn-1")).toEqual({
+    agentId: agent.id,
+    turnId: "active-turn-1",
+    clientMessageId: "input",
+    status: "unknown",
+  });
+  await h.manager.closeAgent(agent.id);
+  await drained;
+  const secondAgent = await h.manager.createAgent(
+    { provider: "codex", cwd: h.workdir },
+    undefined,
+    { workspaceId: undefined },
+  );
+  const second = h.manager.streamAgent(secondAgent.id, "second", { clientMessageId: "input-2" });
+  await second.next();
+  const secondDrained = drainAsyncGenerator(second);
+  await h.manager.closeAgent(secondAgent.id);
+  await secondDrained;
+  const restarted = new AgentManager({ turnReceipts: new AgentTurnReceipts(h.directory), logger });
+  expect(await restarted.getTurnReceipt(secondAgent.id, "active-turn-1")).toMatchObject({
+    clientMessageId: "input-2",
+    status: "unknown",
+  });
+});
+
+test("turn receipt persistence failure leaves recovery unknown without hanging live waiters", async () => {
+  const h = turnReceiptHarness();
+  const agent = await h.manager.createAgent({ provider: "codex", cwd: h.workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const iterator = h.manager.streamAgent(agent.id, "first", { clientMessageId: "input" });
+  await iterator.next();
+  const failedWrite = vi
+    .spyOn(h.receipts, "terminal")
+    .mockRejectedValue(new Error("disk unavailable"));
+  const drained = drainAsyncGenerator(iterator);
+  h.sessions[0]!.pushEvent({
+    type: "turn_completed",
+    provider: "codex",
+    turnId: "active-turn-1",
+    terminalVerification: { turnId: "active-turn-1", nativeTurnId: "native-one" },
+  });
+  await drained;
+  expect(failedWrite).toHaveBeenCalledOnce();
+  expect(h.manager.getAgent(agent.id)?.lifecycle).toBe("idle");
+  expect(await new AgentTurnReceipts(h.directory).get(agent.id, "active-turn-1")).toMatchObject({
+    clientMessageId: "input",
+    status: "unknown",
+  });
+  failedWrite.mockRestore();
+});
+
+test("turn receipts stay unknown after forced manager cancellation without provider terminal evidence", async () => {
+  vi.useFakeTimers();
+  onTestFinished(() => vi.useRealTimers());
+  const h = turnReceiptHarness(
+    (config) =>
+      new (class extends SteeringTestSession {
+        override async interrupt() {}
+      })(config),
+  );
+  const agent = await h.manager.createAgent({ provider: "codex", cwd: h.workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const iterator = h.manager.streamAgent(agent.id, "first", { clientMessageId: "input" });
+  await iterator.next();
+  const drained = drainAsyncGenerator(iterator);
+  const cancel = h.manager.cancelAgentRun(agent.id);
+  await vi.advanceTimersByTimeAsync(20_000);
+  await cancel;
+  await drained;
+  expect(await h.manager.getTurnReceipt(agent.id, "active-turn-1")).toMatchObject({
+    clientMessageId: "input",
+    status: "unknown",
+  });
 });

@@ -8651,3 +8651,103 @@ test("native skill mounts reject all config entrypoints before sending to an old
   ).rejects.toMatchObject({ code: "unsupported_capability" });
   expect(transport.sent).toHaveLength(0);
 });
+
+test("fresh execution rejects unsupported hosts with typed capability errors before any send", async () => {
+  const transport = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "fresh-capability",
+    transportFactory: () => transport.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connected = client.connect();
+  transport.triggerOpen({ features: { creationLifecycle: true } });
+  await connected;
+  await expect(
+    client.createAgent({
+      provider: "codex",
+      cwd: "/project",
+      initialPrompt: "first",
+      requireInitialPromptReservation: true,
+    }),
+  ).rejects.toMatchObject({
+    name: "PaseoUnsupportedCapabilityError",
+    code: "unsupported_capability",
+    capability: "creationInitialPrompt",
+  });
+  await expect(client.getAgentTurnReceipt("agent", "turn")).rejects.toMatchObject({
+    name: "PaseoUnsupportedCapabilityError",
+    code: "unsupported_capability",
+    capability: "agentTurnReceipts",
+  });
+  expect(transport.sent).toHaveLength(0);
+});
+
+test("turn receipt queries survive disconnect without sending a prompt or accepting another turn's result", async () => {
+  const transport = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "turn-receipt",
+    transportFactory: () => transport.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connected = client.connect();
+  transport.triggerOpen({ features: { agentTurnReceipts: true } });
+  await connected;
+  const lost = client.getAgentTurnReceipt("agent", "old-turn");
+  void lost.catch(() => {});
+  transport.triggerClose();
+  await expect(lost).rejects.toThrow();
+  const reconnect = client.connect();
+  transport.triggerOpen({ features: { agentTurnReceipts: true } });
+  await reconnect;
+  const retry = client.getAgentTurnReceipt("agent", "old-turn");
+  const request = parseSentFrame(transport.sent.at(-1)!);
+  expect(request).toMatchObject({
+    type: "agent.turn.get.request",
+    agentId: "agent",
+    turnId: "old-turn",
+  });
+  const receipt = {
+    agentId: "agent",
+    turnId: "old-turn",
+    clientMessageId: "first-input",
+    status: "completed",
+    observedAt: "2026-10-29T00:00:00.000Z",
+  };
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.turn.get.response",
+      payload: {
+        requestId: request.requestId,
+        agentId: "agent",
+        turnId: "old-turn",
+        receipt,
+        error: null,
+      },
+    }),
+  );
+  expect(await retry).toEqual(receipt);
+  const mismatch = client.getAgentTurnReceipt("agent", "old-turn");
+  const mismatchRequest = parseSentFrame(transport.sent.at(-1)!);
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.turn.get.response",
+      payload: {
+        requestId: mismatchRequest.requestId,
+        agentId: "agent",
+        turnId: "old-turn",
+        receipt: { ...receipt, turnId: "later-human-turn" },
+        error: null,
+      },
+    }),
+  );
+  await expect(mismatch).rejects.toThrow("agent_turn_identity_conflict");
+  expect(
+    transport.sent
+      .map(parseSentFrame)
+      .every((message) => message.type === "agent.turn.get.request"),
+  ).toBe(true);
+});

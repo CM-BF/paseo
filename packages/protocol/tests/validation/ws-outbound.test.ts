@@ -113,6 +113,33 @@ describe("WS outbound zod-aot validation", () => {
     });
   });
 
+  it("preserves every durable turn receipt state in the shipped validator", () => {
+    for (const status of ["completed", "failed", "cancelled", "unknown"]) {
+      const receipt = {
+        agentId: "agent",
+        turnId: "exact-turn",
+        clientMessageId: "first-input",
+        status,
+        ...(status === "unknown" ? {} : { observedAt: "2026-10-29T00:00:00Z" }),
+      };
+      const message = {
+        type: "session",
+        message: {
+          type: "agent.turn.get.response",
+          payload: {
+            requestId: "query",
+            agentId: "agent",
+            turnId: "exact-turn",
+            receipt,
+            error: null,
+          },
+        },
+      };
+      expect(WSOutboundMessageSchema.safeParse(message).success).toBe(true);
+      expect(validateWSOutboundMessage(message)).toMatchObject({ success: true, data: message });
+    }
+  });
+
   it("applies defaults inside discriminated-union branches", async () => {
     const schema = await compileInlineSchema(`
 const SourceSchema = z.discriminatedUnion("type", [
