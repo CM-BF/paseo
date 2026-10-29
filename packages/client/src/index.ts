@@ -14,6 +14,8 @@ import type {
   AgentInstructionsUpdate,
   AgentTurnSteerOptions,
   AgentTurnSteerResult,
+  AgentSendIfIdleOptions,
+  AgentSendIfIdleResult,
   CreationSnapshot,
   CreateAgentRequestMessage,
   FetchWorkspacesRequestMessage,
@@ -133,6 +135,8 @@ export type PaseoAgent = AgentSnapshotPayload;
 export type PaseoAgentInstructionsUpdateOptions = AgentInstructionsUpdate;
 export type PaseoAgentSteerOptions = AgentTurnSteerOptions;
 export type PaseoAgentSteerResult = AgentTurnSteerResult;
+export type PaseoAgentSendIfIdleOptions = AgentSendIfIdleOptions;
+export type PaseoAgentSendIfIdleResult = AgentSendIfIdleResult;
 export type PaseoAgentListOptions = FetchAgentsOptions;
 export type PaseoProject = WorkspaceProjectDescriptorPayload;
 export type PaseoProjectListOptions = Omit<ProjectListRequestMessage, "type" | "requestId"> & {
@@ -398,6 +402,11 @@ export interface PaseoAgentHandle {
    */
   reload(options?: { requestId?: string }): Promise<PaseoAgentRefetchResult | null>;
   send(text: string, options?: PaseoAgentSendOptions): Promise<void>;
+  /** Starts a turn only at an idle admission boundary; busy never interrupts or steers. */
+  sendIfIdle(
+    text: string,
+    options?: PaseoAgentSendIfIdleOptions,
+  ): Promise<PaseoAgentSendIfIdleResult>;
   /** Appends only to the specified active turn. Never starts or replaces a turn. */
   steer(text: string, options: PaseoAgentSteerOptions): Promise<PaseoAgentSteerResult>;
   /** Changes the model within this agent's provider; null restores the default. */
@@ -1031,6 +1040,7 @@ function createAgentHandleFactory(
         await daemonClient.sendAgentMessage(id, text, options);
       },
       steer: (text, options) => daemonClient.steerAgentTurn(id, text, options),
+      sendIfIdle: (text, options) => daemonClient.sendAgentMessageIfIdle(id, text, options),
       setModel: (modelId) => daemonClient.setAgentModel(id, modelId),
       setThinkingOption: (thinkingOptionId) =>
         daemonClient.setAgentThinkingOption(id, thinkingOptionId),

@@ -3412,6 +3412,45 @@ export class AgentManager {
     }
   }
 
+  /** Starts one foreground turn only if the current runtime is still idle at admission. */
+  async sendAgentMessageIfIdle(
+    agentId: string,
+    prompt: AgentPromptInput,
+    options?: AgentRunOptions,
+  ): Promise<{ status: "accepted"; turnId: string } | { status: "busy" }> {
+    this.assertRuntimeMutationAvailable(agentId);
+    return this.runForegroundMutation(agentId, async () => {
+      this.assertRuntimeMutationAvailable(agentId);
+      await this.drainSessionEvents(agentId);
+      this.agentStreamCoalescer.flushFor(agentId);
+      const agent = this.requireSessionAgent(agentId);
+      if (
+        agent.activeTurnId ||
+        this.hasInFlightRun(agentId) ||
+        agent.pendingReplacement ||
+        agent.lifecycle === "running" ||
+        agent.lifecycle === "initializing" ||
+        agent.pendingPermissions.size > 0 ||
+        agent.inFlightPermissionResponses.size > 0 ||
+        agent.session.getPendingPermissions().length > 0
+      )
+        return { status: "busy" };
+      // streamAgent reserves its pending run synchronously. No await may separate this
+      // idle check from that reservation; ordinary send/steer/interrupt share this boundary.
+      const iterator = this.streamAgent(agentId, prompt, options);
+      const first = await iterator.next();
+      if (first.done || first.value.type !== "turn_started" || !first.value.turnId) {
+        throw new Error("Agent did not acknowledge a foreground turn");
+      }
+      void (async () => {
+        for await (const _event of iterator) {
+          /* AgentManager broadcasts the events. */
+        }
+      })().catch((error) => this.logger.error({ err: error, agentId }, "Agent stream failed"));
+      return { status: "accepted", turnId: first.value.turnId };
+    });
+  }
+
   async steerAgentRun(
     agentId: string,
     prompt: AgentPromptInput,

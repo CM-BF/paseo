@@ -64,6 +64,32 @@ async function compileInlineSchema(sourceSchema: string): Promise<GeneratedSchem
 }
 
 describe("WS outbound zod-aot validation", () => {
+  it("validates send-if-idle results and retains the accepted turn identity", () => {
+    const wrap = (result: unknown) => ({
+      type: "session",
+      message: {
+        type: "agent.turn.send_if_idle.response",
+        payload: {
+          requestId: "request",
+          agentId: "agent",
+          messageId: "message",
+          result,
+          error: null,
+        },
+      },
+    });
+    for (const result of [{ status: "accepted", turnId: "turn-A" }, { status: "busy" }]) {
+      expect(WSOutboundMessageSchema.safeParse(wrap(result)).success).toBe(true);
+      expect(validateWSOutboundMessage(wrap(result))).toMatchObject({
+        success: true,
+      });
+    }
+    expect(WSOutboundMessageSchema.safeParse(wrap({ status: "accepted" })).success).toBe(false);
+    expect(validateWSOutboundMessage(wrap({ status: "accepted" }))).toMatchObject({
+      success: false,
+    });
+  });
+
   it("applies defaults inside discriminated-union branches", async () => {
     const schema = await compileInlineSchema(`
 const SourceSchema = z.discriminatedUnion("type", [

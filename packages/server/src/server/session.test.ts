@@ -470,6 +470,86 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
   return new Session(sessionOptions);
 }
 
+test.each([{ status: "accepted" as const, turnId: "turn-A" }, { status: "busy" as const }])(
+  "send-if-idle RPC replays $status only to its requesting source",
+  async (result) => {
+    const directory = mkdtempSync(join(tmpdir(), "paseo-session-idle-send-"));
+    const messages: SessionOutboundMessage[] = [];
+    const targetedMessages: Array<{
+      source: object;
+      message: SessionOutboundMessage;
+    }> = [];
+    const sendAgentMessageIfIdle = vi.fn(async () => result);
+    const first = createSessionForTest({
+      messages,
+      targetedMessages,
+      messageReceipts: new MessageReceipts(directory),
+      agentManager: {
+        getAgent: () => ({ id: "agent", provider: "codex", lifecycle: "idle" }),
+        waitForAgentClose: async () => {},
+        sendAgentMessageIfIdle,
+      },
+    });
+    const second = createSessionForTest({
+      messages,
+      targetedMessages,
+      messageReceipts: new MessageReceipts(directory),
+      agentManager: { sendAgentMessageIfIdle },
+    });
+    const source = {},
+      retrySource = {};
+    first.updateClientCapabilities({ selective_agent_timeline: true }, source);
+    second.updateClientCapabilities({ selective_agent_timeline: true }, retrySource);
+    const request = {
+      type: "agent.turn.send_if_idle.request" as const,
+      requestId: "first",
+      agentId: "agent",
+      text: "work",
+      messageId: "idle-1",
+    };
+    try {
+      await first.handleMessage(request, source);
+      await second.handleMessage({ ...request, requestId: "retry" }, retrySource);
+      expect(sendAgentMessageIfIdle).toHaveBeenCalledExactlyOnceWith("agent", "work", {
+        clientMessageId: "idle-1",
+      });
+      expect(messages).toEqual([]);
+      expect(targetedMessages).toEqual([
+        {
+          source,
+          message: {
+            type: "agent.turn.send_if_idle.response",
+            payload: {
+              requestId: "first",
+              agentId: "agent",
+              messageId: "idle-1",
+              result,
+              error: null,
+            },
+          },
+        },
+        {
+          source: retrySource,
+          message: {
+            type: "agent.turn.send_if_idle.response",
+            payload: {
+              requestId: "retry",
+              agentId: "agent",
+              messageId: "idle-1",
+              result,
+              error: null,
+            },
+          },
+        },
+      ]);
+    } finally {
+      await first.cleanup();
+      await second.cleanup();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  },
+);
+
 test.each(["accepted", "unavailable", "changed"] as const)(
   "exact-turn RPC persists %s and replays to the requesting source without redelivery",
   async (status) => {
@@ -5438,33 +5518,65 @@ describe("schedule dispatch routing", () => {
       },
       code: "schedule_request_failed",
     },
-    { msg: { type: "schedule/list", requestId: "rt-sched-list" }, code: "schedule_request_failed" },
     {
-      msg: { type: "schedule/inspect", requestId: "rt-sched-inspect", scheduleId: "s1" },
+      msg: { type: "schedule/list", requestId: "rt-sched-list" },
       code: "schedule_request_failed",
     },
     {
-      msg: { type: "schedule/logs", requestId: "rt-sched-logs", scheduleId: "s1" },
+      msg: {
+        type: "schedule/inspect",
+        requestId: "rt-sched-inspect",
+        scheduleId: "s1",
+      },
       code: "schedule_request_failed",
     },
     {
-      msg: { type: "schedule/pause", requestId: "rt-sched-pause", scheduleId: "s1" },
+      msg: {
+        type: "schedule/logs",
+        requestId: "rt-sched-logs",
+        scheduleId: "s1",
+      },
       code: "schedule_request_failed",
     },
     {
-      msg: { type: "schedule/resume", requestId: "rt-sched-resume", scheduleId: "s1" },
+      msg: {
+        type: "schedule/pause",
+        requestId: "rt-sched-pause",
+        scheduleId: "s1",
+      },
       code: "schedule_request_failed",
     },
     {
-      msg: { type: "schedule/delete", requestId: "rt-sched-delete", scheduleId: "s1" },
+      msg: {
+        type: "schedule/resume",
+        requestId: "rt-sched-resume",
+        scheduleId: "s1",
+      },
       code: "schedule_request_failed",
     },
     {
-      msg: { type: "schedule/run-once", requestId: "rt-sched-run-once", scheduleId: "s1" },
+      msg: {
+        type: "schedule/delete",
+        requestId: "rt-sched-delete",
+        scheduleId: "s1",
+      },
       code: "schedule_request_failed",
     },
     {
-      msg: { type: "schedule/update", requestId: "rt-sched-update", scheduleId: "s1", name: "new" },
+      msg: {
+        type: "schedule/run-once",
+        requestId: "rt-sched-run-once",
+        scheduleId: "s1",
+      },
+      code: "schedule_request_failed",
+    },
+    {
+      msg: {
+        type: "schedule/update",
+        requestId: "rt-sched-update",
+        scheduleId: "s1",
+        name: "new",
+      },
       code: "schedule_request_failed",
     },
   ];

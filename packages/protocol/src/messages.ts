@@ -2079,6 +2079,33 @@ export const AgentInstructionsUpdateSchema = z.object({
 });
 export type AgentInstructionsUpdate = z.infer<typeof AgentInstructionsUpdateSchema>;
 
+export const AgentSendIfIdleOptionsSchema = z.object({
+  messageId: z.string().min(1).optional(),
+});
+export type AgentSendIfIdleOptions = z.infer<typeof AgentSendIfIdleOptionsSchema>;
+export const AgentSendIfIdleResultSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("accepted"), turnId: z.string().min(1) }),
+  z.object({ status: z.literal("busy") }),
+]);
+export type AgentSendIfIdleResult = z.infer<typeof AgentSendIfIdleResultSchema>;
+export const AgentSendIfIdleRequestMessageSchema = AgentSendIfIdleOptionsSchema.extend({
+  type: z.literal("agent.turn.send_if_idle.request"),
+  agentId: z.string(),
+  requestId: z.string(),
+  text: z.string(),
+  messageId: z.string().min(1),
+});
+export const AgentSendIfIdleResponseMessageSchema = z.object({
+  type: z.literal("agent.turn.send_if_idle.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    messageId: z.string(),
+    result: AgentSendIfIdleResultSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
 export const AgentTurnSteerOptionsSchema = z.object({
   expectedTurnId: z.string().min(1),
   messageId: z.string().min(1).optional(),
@@ -3431,6 +3458,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   AgentConfigApplyRequestMessageSchema,
   AgentInstructionsUpdateRequestMessageSchema,
   AgentTurnSteerRequestMessageSchema,
+  AgentSendIfIdleRequestMessageSchema,
   AgentDetachRequestMessageSchema,
   AgentRewindRequestMessageSchema,
   AgentPermissionResponseMessageSchema,
@@ -3911,6 +3939,7 @@ export const ServerInfoStatusPayloadSchema = z
         agentConfigApply: z.boolean().optional(),
         agentInstructionsUpdate: z.boolean().optional(),
         agentTurnSteer: z.boolean().optional(),
+        agentSendIfIdle: z.boolean().optional(),
       })
       .optional(),
   })
@@ -7176,6 +7205,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   AgentConfigApplyResponseMessageSchema,
   AgentInstructionsUpdateResponseMessageSchema,
   AgentTurnSteerResponseMessageSchema,
+  AgentSendIfIdleResponseMessageSchema,
   AgentDetachResponseMessageSchema,
   AgentRewindResponseMessageSchema,
   UpdateAgentResponseMessageSchema,

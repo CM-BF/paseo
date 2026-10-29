@@ -470,7 +470,7 @@ export interface SessionOptions {
   worktreesRoot?: string;
   agentManager: AgentManager;
   agentStorage: AgentStorage;
-  messageReceipts: Pick<MessageReceipts, "send" | "steer">;
+  messageReceipts: Pick<MessageReceipts, "send" | "steer" | "sendIfIdle">;
   agentMessages: AgentMessageDelivery;
   creationService: Pick<CreationService, "create" | "subscribe">;
   projectRegistry: ProjectRegistry;
@@ -830,7 +830,7 @@ export class Session {
   private readonly daemonSession: DaemonSession;
   private readonly hubExecutionController: HubExecutionController | null;
   private readonly workspaceScripts: WorkspaceScriptsService;
-  private readonly messageReceipts: Pick<MessageReceipts, "send" | "steer">;
+  private readonly messageReceipts: Pick<MessageReceipts, "send" | "steer" | "sendIfIdle">;
   private readonly agentMessages: AgentMessageDelivery;
   private readonly createAgentLifecycleDispatch: CreateAgentLifecycleDispatch;
   private readonly creationService: Pick<CreationService, "create" | "subscribe">;
@@ -2886,6 +2886,8 @@ export class Session {
         return this.handleSendAgentMessageRequest(msg);
       case "agent.turn.steer.request":
         return this.handleAgentTurnSteer(msg, source);
+      case "agent.turn.send_if_idle.request":
+        return this.handleAgentSendIfIdle(msg, source);
       case "wait_for_finish_request":
         return this.handleWaitForFinish(msg.agentId, msg.requestId, msg.timeoutMs);
       case "cancel_agent_request":
@@ -8331,6 +8333,48 @@ export class Session {
     if (stored && !stored.title && !stored.lastUserMessageAt) {
       const { provisionalTitle } = resolveCreateAgentTitles({ initialPrompt: text });
       if (provisionalTitle) await this.agentManager.setTitle(agentId, provisionalTitle);
+    }
+  }
+
+  private async handleAgentSendIfIdle(
+    msg: Extract<SessionInboundMessage, { type: "agent.turn.send_if_idle.request" }>,
+    source?: object,
+  ): Promise<void> {
+    const identity = {
+      requestId: msg.requestId,
+      agentId: msg.agentId,
+      messageId: msg.messageId,
+    };
+    try {
+      const result = await this.messageReceipts.sendIfIdle({
+        agentId: msg.agentId,
+        messageId: msg.messageId,
+        request: { operation: "send-if-idle", text: msg.text },
+        prepare: () => this.prepareAgentMessage(msg.agentId, msg.text),
+        send: () =>
+          this.agentManager.sendAgentMessageIfIdle(msg.agentId, msg.text, {
+            clientMessageId: msg.messageId,
+          }),
+      });
+      this.emitForSource(
+        {
+          type: "agent.turn.send_if_idle.response",
+          payload: { ...identity, result, error: null },
+        },
+        source,
+      );
+    } catch (error) {
+      this.emitForSource(
+        {
+          type: "agent.turn.send_if_idle.response",
+          payload: {
+            ...identity,
+            result: null,
+            error: errorToFriendlyMessage(error),
+          },
+        },
+        source,
+      );
     }
   }
 

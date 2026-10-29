@@ -2,14 +2,19 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { AgentTurnSteerResultSchema, type AgentTurnSteerResult } from "@getpaseo/protocol/messages";
+import {
+  AgentTurnSteerResultSchema,
+  AgentSendIfIdleResultSchema,
+  type AgentTurnSteerResult,
+  type AgentSendIfIdleResult,
+} from "@getpaseo/protocol/messages";
 import { writeJsonFileAtomic } from "../atomic-file.js";
 
 const ReceiptSchema = z.object({
   fingerprint: z.string(),
   state: z.enum(["pending", "completed"]),
   agentId: z.string(),
-  result: AgentTurnSteerResultSchema.optional(),
+  result: z.union([AgentSendIfIdleResultSchema, AgentTurnSteerResultSchema]).optional(),
 });
 interface SendMessageInput {
   agentId: string;
@@ -21,10 +26,14 @@ interface SendMessageInput {
 interface SteerMessageInput extends Omit<SendMessageInput, "send"> {
   send: () => Promise<AgentTurnSteerResult>;
 }
+interface IdleMessageInput extends Omit<SendMessageInput, "send"> {
+  send: () => Promise<AgentSendIfIdleResult>;
+}
+type DeliveryResult = AgentTurnSteerResult | AgentSendIfIdleResult | void;
 
 /** Owns message delivery receipts; creation is owned by CreationService. */
 export class MessageReceipts {
-  private readonly pending = new Map<string, Promise<AgentTurnSteerResult | void>>();
+  private readonly pending = new Map<string, Promise<DeliveryResult>>();
   constructor(private readonly directory: string) {}
 
   async send(input: SendMessageInput): Promise<void> {
@@ -34,12 +43,18 @@ export class MessageReceipts {
   async steer(input: SteerMessageInput): Promise<AgentTurnSteerResult> {
     const result = await this.deliver(input);
     if (!result) throw new Error("agent_request_outcome_unknown");
-    return result;
+    return AgentTurnSteerResultSchema.parse(result);
+  }
+
+  async sendIfIdle(input: IdleMessageInput): Promise<AgentSendIfIdleResult> {
+    const result = await this.deliver(input);
+    if (!result) throw new Error("agent_request_outcome_unknown");
+    return AgentSendIfIdleResultSchema.parse(result);
   }
 
   private deliver(
-    input: SendMessageInput | SteerMessageInput,
-  ): Promise<AgentTurnSteerResult | void> {
+    input: SendMessageInput | SteerMessageInput | IdleMessageInput,
+  ): Promise<DeliveryResult> {
     // Preserve the existing on-disk identity and shape across daemon upgrades.
     const key = digest(["send", input.agentId, input.messageId]);
     const previous = this.pending.get(key);
@@ -57,8 +72,8 @@ export class MessageReceipts {
 
   private async sendOnce(
     key: string,
-    input: SendMessageInput | SteerMessageInput,
-  ): Promise<AgentTurnSteerResult | void> {
+    input: SendMessageInput | SteerMessageInput | IdleMessageInput,
+  ): Promise<DeliveryResult> {
     const file = path.join(this.directory, `${key}.json`);
     const fingerprint = digest(input.request);
     const existing = await readReceipt(file);

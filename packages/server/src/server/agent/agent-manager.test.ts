@@ -1166,6 +1166,118 @@ async function startAndSteerThroughManager(
   return { manager, agentId: agent.id, workdir };
 }
 
+test("send-if-idle reserves the pending start and rejects concurrent input without steering", async () => {
+  const entered = deferred<void>();
+  const release = deferred<void>();
+  class HeldStartSession extends SteeringTestSession {
+    override async startTurn(prompt: AgentPromptInput) {
+      entered.resolve();
+      await release.promise;
+      return super.startTurn(prompt);
+    }
+  }
+  const session = new HeldStartSession({
+    provider: "codex",
+    cwd: process.cwd(),
+  });
+  const client = new (class extends TestAgentClient {
+    override async createSession() {
+      return session;
+    }
+  })();
+  const manager = new AgentManager({ clients: { codex: client }, logger });
+  const agent = await manager.createAgent({ provider: "codex", cwd: process.cwd() }, undefined, {
+    workspaceId: undefined,
+  });
+  try {
+    const first = manager.sendAgentMessageIfIdle(agent.id, "queued work", {
+      clientMessageId: "work",
+    });
+    await entered.promise;
+    expect(() => manager.streamAgent(agent.id, "competing input")).toThrow("active run");
+    const second = manager.sendAgentMessageIfIdle(agent.id, "second work");
+    release.resolve();
+    await expect(first).resolves.toEqual({
+      status: "accepted",
+      turnId: "active-turn-1",
+    });
+    await expect(second).resolves.toEqual({ status: "busy" });
+    expect(session.startPrompts).toEqual(["queued work"]);
+    expect(session.steerCount).toBe(0);
+    expect(session.interruptCount).toBe(0);
+  } finally {
+    release.resolve();
+    await manager.closeAgent(agent.id);
+  }
+});
+
+test("send-if-idle rechecks after admission instead of using the caller's idle snapshot", async () => {
+  const session = new SteeringTestSession({
+    provider: "codex",
+    cwd: process.cwd(),
+  });
+  const client = new (class extends TestAgentClient {
+    override async createSession() {
+      return session;
+    }
+  })();
+  const manager = new AgentManager({ clients: { codex: client }, logger });
+  const agent = await manager.createAgent({ provider: "codex", cwd: process.cwd() }, undefined, {
+    workspaceId: undefined,
+  });
+  try {
+    const conditional = manager.sendAgentMessageIfIdle(agent.id, "queue");
+    const human = manager.streamAgent(agent.id, "human input");
+    void drainAsyncGenerator(human);
+    await expect(conditional).resolves.toEqual({ status: "busy" });
+    await manager.waitForAgentRunStart(agent.id);
+    expect(session.startPrompts).toEqual(["human input"]);
+    expect(session.steerCount).toBe(0);
+    expect(session.interruptCount).toBe(0);
+  } finally {
+    await manager.closeAgent(agent.id);
+  }
+});
+
+test("send-if-idle leaves provider permissions untouched", async () => {
+  const session = new SteeringTestSession({
+    provider: "codex",
+    cwd: process.cwd(),
+  });
+  const permission = {
+    id: "permission",
+    provider: "codex" as const,
+    name: "approval",
+    kind: "tool" as const,
+    input: {},
+  };
+  const client = new (class extends TestAgentClient {
+    override async createSession() {
+      return session;
+    }
+  })();
+  const manager = new AgentManager({ clients: { codex: client }, logger });
+  const agent = await manager.createAgent({ provider: "codex", cwd: process.cwd() }, undefined, {
+    workspaceId: undefined,
+  });
+  const permissions = vi
+    .spyOn(session as AgentSession, "getPendingPermissions")
+    .mockReturnValue([permission]);
+  const respond = vi.spyOn(session, "respondToPermission");
+  try {
+    await expect(manager.sendAgentMessageIfIdle(agent.id, "work")).resolves.toEqual({
+      status: "busy",
+    });
+    expect(respond).not.toHaveBeenCalled();
+    expect(session.startCount).toBe(0);
+    expect(session.steerCount).toBe(0);
+    expect(session.interruptCount).toBe(0);
+  } finally {
+    permissions.mockRestore();
+    await manager.closeAgent(agent.id);
+  }
+});
+
 test("uses an injected timeline store without making it a production requirement", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-timeline-store-"));
   const store = new RecordingTimelineStore();

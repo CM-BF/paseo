@@ -79,6 +79,24 @@ if (turn) {
 即可读取已保存的结果。`agent_request_outcome_unknown` 表示无法确认是否送达，
 此时不要换一个消息 ID 自动重发。仅在调用方不需要恢复重试时省略 `messageId`。
 
+## 仅在空闲时发送 {#send-only-when-idle}
+
+任务队列需要避免干扰其他调用方的轮次时，使用 `sendIfIdle()`：
+
+```ts
+const result = await reviewer.sendIfIdle("Run the next queued check.", {
+  messageId: "queue-check-42",
+});
+if (result.status === "accepted") console.log(result.turnId);
+```
+
+daemon 会在同一次准入操作中检查空闲并预留新轮次。`busy` 表示没有发送输入；正在运行或
+启动、等待替换、存在未处理权限以及已归档的 Agent 均不可接收。此方法不会引导、中断、
+清除权限或取消归档，需要主机支持 `agentSendIfIdle`。`accepted` 返回实际轮次 ID，只确认
+已启动，不代表任务完成。响应丢失时，用同样的文本和消息 ID 重试，`busy` 和 `accepted`
+均会返回原先持久保存的结果。已明确返回 `busy` 后，下次重新尝试派工需用新消息 ID；
+结果不确定时不能换 ID 自动重发。
+
 ## 按标签查找 Agent {#find-agents-by-label}
 
 创建时设置 `labels`，之后按标签过滤。匹配由 daemon 完成：

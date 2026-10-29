@@ -113,6 +113,60 @@ test.each(["accepted", "unavailable", "changed"] as const)(
   },
 );
 
+test.each([{ status: "accepted" as const, turnId: "turn-A" }, { status: "busy" as const }])(
+  "send-if-idle persists $status across lost acknowledgements without dispatching again",
+  async (result) => {
+    const { requests, directory } = await fixture();
+    let deliveries = 0;
+    const input = {
+      agentId: "agent",
+      messageId: "idle-send",
+      request: { operation: "send-if-idle", text: "work" },
+      send: async () => {
+        deliveries++;
+        return result;
+      },
+    };
+    await expect(
+      Promise.all([requests.sendIfIdle(input), requests.sendIfIdle(input)]),
+    ).resolves.toEqual([result, result]);
+    await expect(new MessageReceipts(directory).sendIfIdle(input)).resolves.toEqual(result);
+    await expect(
+      requests.sendIfIdle({
+        ...input,
+        request: { ...input.request, text: "changed" },
+      }),
+    ).rejects.toThrow("agent_request_key_conflict");
+    await expect(
+      requests.send({
+        ...input,
+        request: { text: "work" },
+        send: async () => {},
+      }),
+    ).rejects.toThrow("agent_request_key_conflict");
+    expect(deliveries).toBe(1);
+  },
+);
+
+test("send-if-idle leaves ambiguous provider acceptance pending across reconstruction", async () => {
+  const { requests, directory } = await fixture();
+  let deliveries = 0;
+  const input = {
+    agentId: "agent",
+    messageId: "idle-send",
+    request: { operation: "send-if-idle", text: "work" },
+    send: async () => {
+      deliveries++;
+      throw new Error("lost provider ACK");
+    },
+  };
+  await expect(requests.sendIfIdle(input)).rejects.toThrow("lost provider ACK");
+  await expect(new MessageReceipts(directory).sendIfIdle(input)).rejects.toThrow(
+    "agent_request_outcome_unknown",
+  );
+  expect(deliveries).toBe(1);
+});
+
 test("ambiguous exact-turn acceptance retains a pending receipt without replay", async () => {
   const { requests, directory } = await fixture();
   let deliveries = 0;

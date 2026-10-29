@@ -82,6 +82,25 @@ accept steering. Neither starts or interrupts a turn, and pending permissions re
 `agent_request_outcome_unknown` error means acceptance could not be confirmed; do not automatically
 resend with a new message ID. Omit `messageId` only when the caller does not need retry recovery.
 
+## Send only when idle
+
+Use `sendIfIdle()` for a queue that must not interrupt or join another caller's turn:
+
+```ts
+const result = await reviewer.sendIfIdle("Run the next queued check.", {
+  messageId: "queue-check-42",
+});
+if (result.status === "accepted") console.log(result.turnId);
+```
+
+The daemon checks idleness and reserves the new turn atomically. `busy` means no input was
+sent; active or starting turns, replacement, pending permissions, and archived agents are
+not eligible. It never steers, interrupts, clears permissions, or unarchives the agent.
+The `agentSendIfIdle` capability is required. Acceptance confirms the native turn started,
+not that it finished. For a lost response, retry the same text and message ID: both `busy`
+and `accepted` are durable results. After a confirmed `busy`, a later dispatch attempt needs
+a new message ID. An uncertain receipt must not be automatically resent under a new ID.
+
 ## Find agents by label
 
 Set `labels` at creation, then filter on them. The daemon does the matching:

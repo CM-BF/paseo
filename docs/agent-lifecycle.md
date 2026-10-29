@@ -124,6 +124,13 @@ registration and persistence; it never means only that a desired prompt was save
 
 ### Cancellation
 
+`agent.turn.send_if_idle.request` uses the same foreground admission lane to drain events,
+check for active or starting turns, replacement and permissions, and reserve a pending run
+without an intervening await. It starts only that new turn and returns its acknowledged ID;
+a busy runtime receives no prompt. It never falls back to steering or interruption. Durable
+receipts retain both accepted and busy outcomes; an ambiguous native acknowledgement remains
+pending and cannot be replayed. Ordinary sends retain their existing behavior.
+
 `agent.turn.steer.request` delivers only to its caller-specified Paseo turn. The foreground
 admission lane rechecks that identity after draining Provider events, and Provider adapters check
 their native turn before sending. A changed or unsupported turn never falls back to replacement

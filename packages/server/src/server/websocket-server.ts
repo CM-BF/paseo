@@ -2120,6 +2120,7 @@ export class VoiceAssistantWebSocketServer {
         agentConfigApply: true,
         agentInstructionsUpdate: true,
         agentTurnSteer: true,
+        agentSendIfIdle: true,
       },
     };
   }

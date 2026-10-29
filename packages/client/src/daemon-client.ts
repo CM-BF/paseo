@@ -17,7 +17,12 @@ import {
 } from "./connection/index.js";
 import { CreationClient } from "./creation/index.js";
 import type { CreationSnapshot } from "@getpaseo/protocol/messages";
-import type { AgentTurnSteerOptions, AgentTurnSteerResult } from "@getpaseo/protocol/messages";
+import type {
+  AgentTurnSteerOptions,
+  AgentTurnSteerResult,
+  AgentSendIfIdleOptions,
+  AgentSendIfIdleResult,
+} from "@getpaseo/protocol/messages";
 import type { z } from "zod";
 import type { SessionEventSubscription } from "@getpaseo/protocol/messages";
 import type { LocalSpeechModel } from "@getpaseo/protocol/speech/rpc-schemas";
@@ -4035,6 +4040,30 @@ export class DaemonClient {
     }
   }
 
+  async sendAgentMessageIfIdle(
+    agentId: string,
+    text: string,
+    options?: AgentSendIfIdleOptions,
+  ): Promise<AgentSendIfIdleResult> {
+    // COMPAT(agentSendIfIdle): added in v0.14.0; remove after 2027-04-29 once the daemon floor supports it.
+    if (this.getLastServerInfoMessage()?.features?.agentSendIfIdle !== true) {
+      throw Object.assign(new Error("Update the host to send only when an agent is idle."), {
+        code: "unsupported_capability",
+      });
+    }
+    const payload = await this.sendCorrelatedSessionRequest({
+      message: {
+        type: "agent.turn.send_if_idle.request",
+        agentId,
+        text,
+        messageId: options?.messageId ?? this.createRequestId(),
+      },
+      responseType: "agent.turn.send_if_idle.response",
+    });
+    if (!payload.result) throw new Error(payload.error ?? "Conditional send failed");
+    return payload.result;
+  }
+
   async steerAgentTurn(
     agentId: string,
     text: string,
@@ -7223,7 +7252,14 @@ export class DaemonClient {
 
   private emitDisconnectedStateForReconnect(
     reason: string | undefined,
-    input: { reason?: string; event?: string; reasonCode?: string; failure?: Error } | undefined,
+    input:
+      | {
+          reason?: string;
+          event?: string;
+          reasonCode?: string;
+          failure?: Error;
+        }
+      | undefined,
   ): void {
     this.updateConnectionState(
       {

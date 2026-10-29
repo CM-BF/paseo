@@ -118,6 +118,8 @@ const configure = defineRpc({
   input: z.object({ agentId: z.string() }),
   output: z.object({ scheduleId: z.string(), model: z.string(), feature: z.boolean(), runStatus: z.string(),
     steer: z.object({ status: z.literal("changed") }), steerRetry: z.object({ status: z.literal("changed") }),
+    idleSend: z.object({ status: z.literal("accepted"), turnId: z.string() }),
+    idleRetry: z.object({ status: z.literal("accepted"), turnId: z.string() }),
   }),
 });
 
@@ -156,6 +158,10 @@ export default function contribute(server: PluginServerContext) {
     const steerOptions = { expectedTurnId: "finished-turn", messageId: "plugin-exact-steer" };
     const steer = await agent.steer("Only the finished turn", steerOptions);
     const steerRetry = await agent.steer("Only the finished turn", steerOptions);
+    const idleOptions = { messageId: "plugin-idle-send" };
+    const idleSend = await agent.sendIfIdle("Start a separate plugin turn", idleOptions);
+    await agent.waitForFinish();
+    const idleRetry = await agent.sendIfIdle("Start a separate plugin turn", idleOptions);
     const snapshot = await agent.refresh();
     const created = await paseo.schedules.create({
       name: "Plugin review", prompt: "Scheduled by a plugin handler",
@@ -174,7 +180,7 @@ export default function contribute(server: PluginServerContext) {
     if (logs.error) throw new Error(logs.error);
     return {
       scheduleId: options.id,
-      steer, steerRetry,
+      steer, steerRetry, idleSend, idleRetry,
       model: snapshot.agent.model,
       feature: snapshot.agent.features.find((feature) => feature.id === "test_feature").value,
       runStatus: logs.runs[0].status,
@@ -242,6 +248,8 @@ export default function contribute(server: PluginServerContext) {
       scheduleId: expect.any(String),
       steer: { status: "changed" },
       steerRetry: { status: "changed" },
+      idleSend: { status: "accepted", turnId: expect.any(String) },
+      idleRetry: { status: "accepted", turnId: expect.any(String) },
       model: "test-model",
       feature: true,
       runStatus: "succeeded",
